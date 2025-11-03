@@ -60,75 +60,86 @@ class _HomeScreenState extends State<HomeScreen> {
     final theme = Theme.of(context);
     final lastRecord = appState.history.isEmpty ? null : appState.history.first;
 
-    return GradientBackground(
-      asset: 'lib/assets/backgrounds/obsdiv_home.svg',
-      child: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverAppBar(
-              pinned: true,
-              backgroundColor: Colors.transparent,
-              leading: IconButton(
-                icon: const Icon(Icons.menu_rounded),
-                onPressed: () => Navigator.of(context).pushNamed(SettingsScreen.routeName),
+    return Scaffold(
+      backgroundColor: Colors
+          .transparent, // 🔹 Transparent scaffold as requested
+      body: GradientBackground(
+        asset: 'lib/assets/backgrounds/obsdiv_home.svg',
+        child: SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                pinned: true,
+                backgroundColor: Colors.transparent,
+                leading: IconButton(
+                  icon: const Icon(Icons.menu_rounded),
+                  onPressed: () => Navigator.of(context)
+                      .pushNamed(SettingsScreen.routeName),
+                ),
+                title: const BrandedLogo(
+                  size: 56,
+                  variant: LogoVariant.icon,
+                ),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.auto_awesome_outlined),
+                    onPressed: () => Navigator.of(context)
+                        .pushNamed(SettingsScreen.routeName),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.history_rounded),
+                    onPressed: () => Navigator.of(context)
+                        .pushNamed(HistoryScreen.routeName),
+                  ),
+                ],
               ),
-              title: const BrandedLogo(size: 56, variant: LogoVariant.icon),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.auto_awesome_outlined),
-                  onPressed: () => Navigator.of(context).pushNamed(SettingsScreen.routeName),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.history_rounded),
-                  onPressed: () => Navigator.of(context).pushNamed(HistoryScreen.routeName),
-                ),
-              ],
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.only(bottom: 32),
-              sliver: SliverToBoxAdapter(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Summon visuals with a single prompt.',
-                      style: theme.textTheme.headlineMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'OBSDIV’s generative core crafts imagery from your words in seconds.',
-                      style: theme.textTheme.bodyLarge,
-                    ),
-                    const SizedBox(height: 32),
-                    PromptInput(
-                      controller: _promptController,
-                      onSubmitted: () => _handleGenerate(appState),
-                    ),
-                    const SizedBox(height: 24),
-                    AnimatedGlowButton(
-                      label: 'Generate with OBSDIV',
-                      icon: Icons.bolt_rounded,
-                      isBusy: appState.isGenerating,
-                      onPressed: () => _handleGenerate(appState),
-                    ),
-                    if (lastRecord != null) ...[
-                      const SizedBox(height: 42),
-                      Text('Latest creation', style: theme.textTheme.titleLarge),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        height: 380,
-                        child: GeneratedImagePreview(
-                          record: lastRecord,
-                          onOpen: () => _openResult(lastRecord),
-                        ),
+              SliverPadding(
+                padding: const EdgeInsets.only(bottom: 32),
+                sliver: SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Summon visuals with a single prompt.',
+                        style: theme.textTheme.headlineMedium,
                       ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'OBSDIV’s generative core crafts imagery from your words in seconds.',
+                        style: theme.textTheme.bodyLarge,
+                      ),
+                      const SizedBox(height: 32),
+                      PromptInput(
+                        controller: _promptController,
+                        onSubmitted: () => _handleGenerate(appState),
+                      ),
+                      const SizedBox(height: 24),
+                      AnimatedGlowButton(
+                        label: 'Generate with OBSDIV',
+                        icon: Icons.bolt_rounded,
+                        isBusy: appState.isGenerating,
+                        onPressed: () => _handleGenerate(appState),
+                      ),
+                      if (lastRecord != null) ...[
+                        const SizedBox(height: 42),
+                        Text('Latest creation',
+                            style: theme.textTheme.titleLarge),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          height: 380,
+                          child: GeneratedImagePreview(
+                            record: lastRecord,
+                            onOpen: () => _openResult(lastRecord),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
                     ],
-                    const SizedBox(height: 24),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

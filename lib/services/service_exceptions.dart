@@ -9,7 +9,7 @@ class AppServiceException implements Exception {
 
 /// Thrown when an API key is not configured for the active provider.
 class MissingApiKeyException extends AppServiceException {
-  const MissingApiKeyException()
+  const MissingApiKeyException({required String message})
       : super('Missing API key. Please configure your OpenAI key to continue.');
 }
 

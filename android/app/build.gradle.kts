@@ -1,20 +1,15 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("dev.flutter.flutter-gradle-plugin")
+}
+
 android {
     namespace = "com.example.ailogos"
     compileSdk = flutter.compileSdkVersion
 
-    // 🔧 Use the highest NDK version required by your plugins
+    // NDK version required by your plugins
     ndkVersion = "27.0.12077973"
-
-    compileOptions {
-        // Java 11 is perfect
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
-
-    kotlinOptions {
-        // Keep Kotlin JVM consistent with Java version
-        jvmTarget = JavaVersion.VERSION_11.toString()
-    }
 
     defaultConfig {
         applicationId = "com.example.ailogos"
@@ -25,13 +20,28 @@ android {
     }
 
     buildTypes {
-        getByName("release") {
+        release {
+            // Using debug signing so `flutter run --release` works
             signingConfig = signingConfigs.getByName("debug")
         }
     }
 
-    // 🧩 Recommended: declare JVM toolchain explicitly for Kotlin
-    kotlin {
-        jvmToolchain(11)
+    // 🔧 IMPORTANT: use Java 21 since that's what you have installed
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_21.toString()
+    }
+
+    // 🔧 Tell Gradle/Kotlin toolchain to use Java 21
+    kotlin {
+        jvmToolchain(21)
+    }
+}
+
+flutter {
+    source = "../.."
 }

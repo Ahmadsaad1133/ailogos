@@ -67,7 +67,6 @@ class AppState extends ChangeNotifier {
     try {
       final record = await _imageService.generateImage(
         prompt: prompt,
-        user: _displayName,
       );
       _history.insert(0, record);
       await _historyService.saveHistory(_history);

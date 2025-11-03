@@ -15,6 +15,13 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
 
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"

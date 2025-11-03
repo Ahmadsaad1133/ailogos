@@ -59,17 +59,20 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Generate an image and return the full GenerationRecord.
   Future<GenerationRecord?> generateImage(String prompt) async {
     if (_isGenerating) return null;
     _isGenerating = true;
     _errorMessage = null;
     notifyListeners();
+
     try {
-      final record = await _imageService.generateImage(
-        prompt: prompt,
-      );
+      // 👈 هون لازم نستعمل named parameter
+      final record = await _imageService.generateImage(prompt: prompt);
+
       _history.insert(0, record);
       await _historyService.saveHistory(_history);
+
       return record;
     } on AppServiceException catch (error) {
       _errorMessage = error.message;
@@ -101,6 +104,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<String> saveImage(GenerationRecord record) async {
+    // imageBytes جاي من الـ getter داخل GenerationRecord
     return _storageService.saveToGallery(record.imageBytes, record.id);
   }
 

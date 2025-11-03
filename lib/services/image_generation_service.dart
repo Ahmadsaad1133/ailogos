@@ -5,53 +5,67 @@ import 'package:http/http.dart' as http;
 import '../models/generation_record.dart';
 import 'service_exceptions.dart';
 
-/// Communicates with Hugging Face Inference API
 class ImageGenerationService {
-  ImageGenerationService({http.Client? client})
-      : _client = client ?? http.Client();
+  /// Hugging Face Inference API key.
+  final String apiKey;
 
-  final http.Client _client;//
+  /// Model id, e.g. "stabilityai/stable-diffusion-3.5-large".
+  final String modelId;
 
-  static const _modelUrl =
-      'https://api-inference.huggingface.co/models/gsdf/Counterfeit-V2.5';
+  const ImageGenerationService({
+    required this.apiKey,
+    required this.modelId,
+  });
 
-  static const _apiKey = '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';
+  String get _endpoint =>
+      'https://api-inference.huggingface.co/models/$modelId';
 
-  Future<GenerationRecord> generateImage({
-    required String prompt,
-  }) async {
-    print('🧠 Sending prompt to Hugging Face: $prompt');
-
-    final response = await _client.post(
-      Uri.parse(_modelUrl),
-      headers: {
-        'Authorization': 'Bearer $_apiKey',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({'inputs': prompt}),
-    );
-
-    print('📡 Response: ${response.statusCode}');
-    if (response.statusCode != 200) {
-      throw AppServiceException(
-        'Generation failed: ${response.statusCode} - ${response.body}',
-      );
+  Future<GenerationRecord> generateImage({required String prompt}) async {
+    if (apiKey.isEmpty) {
+      // لاحظ إننا ما منمرر message هون → بيستعمل الافتراضي من الكلاس
+      throw const MissingApiKeyException(message: '');
     }
 
-    final imageBytes = response.bodyBytes;
-    final imageBase64 = base64Encode(imageBytes);
+    try {
+      print('🧠 Sending prompt to Hugging Face: $prompt');
+      print('📦 Using model: $modelId');
 
-    final now = DateTime.now();
-    return GenerationRecord(
-      id: now.microsecondsSinceEpoch.toString(),
-      prompt: prompt,
-      model: 'Stable Diffusion v1-5',
-      imageBase64: imageBase64,
-      createdAt: now,
-    );
-  }
+      final response = await http.post(
+        Uri.parse(_endpoint),
+        headers: <String, String>{
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(<String, dynamic>{
+          'inputs': prompt,
+        }),
+      );
 
-  void dispose() {
-    _client.close();
+      print('📡 Response: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final Uint8List bytes = response.bodyBytes;
+        final String base64 = base64Encode(bytes);
+
+        return GenerationRecord(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          prompt: prompt,
+          model: modelId,
+          imageBase64: base64,
+          createdAt: DateTime.now(),
+        );
+      } else {
+        // ❗ هون منمرر message بشكل صريح عشان ما يطلع Error
+        print('❌ HF error body: ${response.body}');
+        throw ProviderException(
+          message:
+          'Hugging Face error ${response.statusCode}: ${response.body}',
+          statusCode: response.statusCode,
+        );
+      }
+    } catch (e) {
+      print('⚠️ Exception while calling HF: $e');
+      throw AppServiceException('Failed to generate image: $e');
+    }
   }
 }

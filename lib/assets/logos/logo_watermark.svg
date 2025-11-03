@@ -1,0 +1,19 @@
+<svg width="320" height="120" viewBox="0 0 320 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="320" height="120" rx="28" fill="#080714"/>
+    <defs>
+        <linearGradient id="textGradient" x1="32" y1="12" x2="288" y2="108" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#7C5CFF"/>
+            <stop offset="0.5" stop-color="#00E0FF"/>
+            <stop offset="1" stop-color="#A855F7"/>
+        </linearGradient>
+    </defs>
+    <g filter="url(#blur)">
+        <ellipse cx="160" cy="60" rx="120" ry="40" fill="#5B3CFF" fill-opacity="0.3"/>
+    </g>
+    <circle cx="60" cy="60" r="40" fill="#0E0C1F" stroke="#7C5CFF" stroke-width="2"/>
+    <path d="M48 36H72C78.6274 36 84 41.3726 84 48V54C84 60.6274 78.6274 66 72 66H60C53.3726 66 48 71.3726 48 78V84" stroke="#00E0FF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="120" y="72" font-family="'Orbitron', sans-serif" font-size="32" font-weight="600" fill="url(#textGradient)">Powered by OBSDIV</text>
+    <filter id="blur" x="0" y="0" width="320" height="120" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+        <feGaussianBlur stdDeviation="24"/>
+    </filter>
+</svg>

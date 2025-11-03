@@ -1,0 +1,27 @@
+<svg width="1440" height="2560" viewBox="0 0 1440 2560" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1440" height="2560" fill="#050312"/>
+    <defs>
+        <linearGradient id="histGrad" x1="1440" y1="0" x2="0" y2="2560" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#111028"/>
+            <stop offset="0.5" stop-color="#141640"/>
+            <stop offset="1" stop-color="#03020F"/>
+        </linearGradient>
+        <pattern id="dots" width="80" height="80" patternUnits="userSpaceOnUse">
+            <circle cx="8" cy="8" r="2" fill="#6B4DFF" fill-opacity="0.25"/>
+        </pattern>
+        <radialGradient id="histGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(720 420) scale(520)">
+            <stop stop-color="#6B4DFF" stop-opacity="0.45"/>
+            <stop offset="1" stop-color="#6B4DFF" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="histGlow2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(320 1780) scale(440)">
+            <stop stop-color="#00E0FF" stop-opacity="0.5"/>
+            <stop offset="1" stop-color="#00E0FF" stop-opacity="0"/>
+        </radialGradient>
+    </defs>
+    <rect width="1440" height="2560" fill="url(#histGrad)"/>
+    <rect width="1440" height="2560" fill="url(#dots)" opacity="0.5"/>
+    <circle cx="720" cy="420" r="520" fill="url(#histGlow)"/>
+    <circle cx="320" cy="1780" r="440" fill="url(#histGlow2)"/>
+    <path d="M120 600H1320" stroke="#2D2B4E" stroke-opacity="0.5" stroke-dasharray="12 12"/>
+    <path d="M120 1320H1320" stroke="#2D2B4E" stroke-opacity="0.5" stroke-dasharray="12 12"/>
+</svg>

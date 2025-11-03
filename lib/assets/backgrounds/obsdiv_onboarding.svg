@@ -1,0 +1,25 @@
+<svg width="1080" height="1920" viewBox="0 0 1080 1920" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1080" height="1920" fill="#040312"/>
+    <defs>
+        <linearGradient id="grad" x1="1080" y1="0" x2="0" y2="1920" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#0F172A"/>
+            <stop offset="0.45" stop-color="#1E144A"/>
+            <stop offset="1" stop-color="#020111"/>
+        </linearGradient>
+        <pattern id="grid" patternUnits="userSpaceOnUse" width="120" height="120">
+            <path d="M0 0H120V120" fill="none" stroke="#2C2A4A" stroke-width="1" stroke-opacity="0.35"/>
+        </pattern>
+        <radialGradient id="orb1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(260 420) scale(360)">
+            <stop stop-color="#7C5CFF" stop-opacity="0.75"/>
+            <stop offset="1" stop-color="#7C5CFF" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="orb2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(820 1480) scale(420)">
+            <stop stop-color="#00E0FF" stop-opacity="0.6"/>
+            <stop offset="1" stop-color="#00E0FF" stop-opacity="0"/>
+        </radialGradient>
+    </defs>
+    <rect width="1080" height="1920" fill="url(#grad)"/>
+    <rect width="1080" height="1920" fill="url(#grid)"/>
+    <circle cx="260" cy="420" r="360" fill="url(#orb1)"/>
+    <circle cx="820" cy="1480" r="420" fill="url(#orb2)"/>
+</svg>

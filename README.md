@@ -1,16 +1,45 @@
-# ailogos
+# Powered by OBSDIV
+Powered by OBSDIV is a futuristic, neon-inspired AI image generator built with Flutter. It connects directly to the OpenAI Images API so you can transform text prompts into shareable artwork on Android and iOS.
 
-A new Flutter project.
+## Features
+
+- 🔮 Animated splash and guided onboarding experience.
+- 🧠 Prompt-to-image pipeline powered by the OpenAI Images `gpt-image-1` model.
+- 🖼️ Immersive result view with zoom, save to gallery, and share actions.
+- 🗂️ Persistent creation history stored locally.
+- 🎨 Theme controls with custom neon accent colors and profile naming.
+- 🧱 Fully custom art direction with handcrafted logos, icons, mockups, and gradient backgrounds.
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+1. **Install Flutter** (3.22 or newer is recommended).
+2. **Clone this repository** and install dependencies:
 
-A few resources to get you started if this is your first Flutter project:
+   ```bash
+   flutter pub get
+   ```
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+3. **Configure your OpenAI API key** for image generation:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+    - Copy `.env.example` to `.env` and fill in `OPENAI_API_KEY`.
+    - Alternatively, pass the key at build time:
+
+      ```bash
+      flutter run --dart-define=OPENAI_API_KEY=sk-...your-key...
+      ```
+
+4. **Run the app** on a device or emulator:
+
+   ```bash
+   flutter run
+   ```
+
+   Grant gallery permissions when prompted so the app can save generated artwork.
+
+## Notes
+
+- Image generation relies on the OpenAI Images endpoint. Ensure the API key you provide has access to the `gpt-image-1` model.
+- The design assets live under `lib/assets/` and are pre-configured in `pubspec.yaml`.
+- History is stored locally via `SharedPreferences`. Clearing app data resets the timeline.
+
+Enjoy crafting neon-grade visuals with Powered by OBSDIV!

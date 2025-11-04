@@ -17,6 +17,7 @@ class GenerationRecord {
     required this.createdAt,
   });
 
+  /// Convenience getter to get raw image bytes.
   Uint8List get imageBytes => base64Decode(imageBase64);
 
   GenerationRecord copyWith({
@@ -35,7 +36,7 @@ class GenerationRecord {
     );
   }
 
-  Map<String, dynamic> toJson() => {
+  Map<String, dynamic> toJson() => <String, dynamic>{
     'id': id,
     'prompt': prompt,
     'model': model,
@@ -47,9 +48,26 @@ class GenerationRecord {
     return GenerationRecord(
       id: json['id'] as String,
       prompt: json['prompt'] as String,
-      model: json['model'] as String? ?? 'gpt-image-1',
+      model: json['model'] as String? ?? 'unknown',
       imageBase64: json['imageBase64'] as String,
       createdAt: DateTime.parse(json['createdAt'] as String),
+    );
+  }
+
+  /// Helper to build a record directly from raw HF image bytes.
+  factory GenerationRecord.fromBytes({
+    required String id,
+    required String prompt,
+    required String model,
+    required List<int> bytes,
+    DateTime? createdAt,
+  }) {
+    return GenerationRecord(
+      id: id,
+      prompt: prompt,
+      model: model,
+      imageBase64: base64Encode(bytes),
+      createdAt: createdAt ?? DateTime.now(),
     );
   }
 }

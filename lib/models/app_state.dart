@@ -24,10 +24,10 @@ class AppState extends ChangeNotifier {
   final PreferencesService _preferencesService;
   final StorageService _storageService;
 
-  final List<GenerationRecord> _history = [];
   bool _initialised = false;
   bool _isGenerating = false;
   String? _errorMessage;
+  final List<GenerationRecord> _history = <GenerationRecord>[];
   Color _accent = AppColors.accent;
   String? _displayName;
 
@@ -47,9 +47,12 @@ class AppState extends ChangeNotifier {
   Future<void> initialise() async {
     if (_initialised) return;
 
-    _history.clear();
-    _history.addAll(_historyService.loadHistory());
+    _history
+      ..clear()
+      ..addAll(_historyService.loadHistory());
+
     _displayName = _preferencesService.displayName;
+
     final accentHex = _preferencesService.accentHex;
     if (accentHex != null) {
       _accent = Color(accentHex);
@@ -59,31 +62,50 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Generate an image and return the full GenerationRecord.
+  /// هيدي الفنكشن اللي بيناديها الـ HomeScreen:
+  /// state.generateImage(prompt)
   Future<GenerationRecord?> generateImage(String prompt) async {
-    if (_isGenerating) return null;
+    final trimmed = prompt.trim();
+    if (trimmed.isEmpty) {
+      _errorMessage = 'Please enter a prompt first.';
+      notifyListeners();
+      return null;
+    }
+
     _isGenerating = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      // 👈 هون لازم نستعمل named parameter
-      final record = await _imageService.generateImage(prompt: prompt);
+      final record = await _imageService.generateImage(prompt: trimmed);
 
+      // حطّ الصورة الجديدة بأول الـ history
       _history.insert(0, record);
       await _historyService.saveHistory(_history);
 
       return record;
-    } on AppServiceException catch (error) {
-      _errorMessage = error.message;
+    } on MissingApiKeyException catch (e) {
+      _errorMessage = e.message;
       return null;
-    } catch (error) {
-      _errorMessage = 'Something went wrong. Please try again.\n$error';
+    } on ProviderException catch (e) {
+      _errorMessage = e.message;
+      return null;
+    } on AppServiceException catch (e) {
+      _errorMessage = e.message;
+      return null;
+    } catch (e) {
+      _errorMessage = 'Unexpected error: $e';
       return null;
     } finally {
       _isGenerating = false;
       notifyListeners();
     }
+  }
+
+  Future<void> clearHistory() async {
+    _history.clear();
+    await _historyService.saveHistory(_history);
+    notifyListeners();
   }
 
   Future<void> markOnboardingComplete() async {
@@ -104,7 +126,6 @@ class AppState extends ChangeNotifier {
   }
 
   Future<String> saveImage(GenerationRecord record) async {
-    // imageBytes جاي من الـ getter داخل GenerationRecord
     return _storageService.saveToGallery(record.imageBytes, record.id);
   }
 

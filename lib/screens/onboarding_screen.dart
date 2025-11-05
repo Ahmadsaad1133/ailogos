@@ -7,7 +7,7 @@ import '../widgets/animated_glow_button.dart';
 import '../widgets/branded_logo.dart';
 import '../widgets/gradient_background.dart';
 import 'home_screen.dart';
-
+import 'sign_in_screen.dart';
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -39,9 +39,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _complete() async {
-    await context.read<AppState>().markOnboardingComplete();
+    final appState = context.read<AppState>();
+    await appState.markOnboardingComplete();
     if (!mounted) return;
-    Navigator.of(context).pushReplacementNamed(HomeScreen.routeName);
+    final shouldPromptSignIn =
+        appState.authAvailable && !appState.isAuthenticated;
+    final destination =
+    shouldPromptSignIn ? SignInScreen.routeName : HomeScreen.routeName;
+    Navigator.of(context).pushReplacementNamed(destination);
   }
 
   @override

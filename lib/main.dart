@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:powered_by_obsdiv/screens/onboarding_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'models/app_state.dart';
 import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'screens/result_screen.dart';
+import 'screens/sign_in_screen.dart';
+import 'screens/sign_out_screen.dart';
+import 'screens/splash_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/auth_service.dart';
 import 'services/history_service.dart';
@@ -86,9 +89,19 @@ class OBSDIVApp extends StatelessWidget {
       title: 'Powered by OBSDIV',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
-      home: const OnboardingScreen(),
+      home: const SignInScreen(),
       onGenerateRoute: (settings) {
         switch (settings.name) {
+          case SplashScreen.routeName:
+            return MaterialPageRoute(
+              builder: (_) => const SplashScreen(),
+              settings: settings,
+            );
+          case OnboardingScreen.routeName:
+            return MaterialPageRoute(
+              builder: (_) => const OnboardingScreen(),
+              settings: settings,
+            );
           case HomeScreen.routeName:
             return MaterialPageRoute(
               builder: (_) => const HomeScreen(),
@@ -107,6 +120,16 @@ class OBSDIVApp extends StatelessWidget {
           case HistoryScreen.routeName:
             return MaterialPageRoute(
               builder: (_) => const HistoryScreen(),
+              settings: settings,
+            );
+          case SignInScreen.routeName:
+            return MaterialPageRoute(
+              builder: (_) => const SignInScreen(),
+              settings: settings,
+            );
+          case SignOutScreen.routeName:
+            return MaterialPageRoute(
+              builder: (_) => const SignOutScreen(),
               settings: settings,
             );
         }

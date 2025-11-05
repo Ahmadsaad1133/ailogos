@@ -5,7 +5,8 @@ import '../models/app_state.dart';
 import '../themes/colors.dart';
 import '../widgets/branded_logo.dart';
 import '../widgets/gradient_background.dart';
-
+import 'sign_in_screen.dart';
+import 'sign_out_screen.dart';
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -17,24 +18,16 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _nameController;
-  late TextEditingController _emailController;
-  late TextEditingController _passwordController;
-  bool _isAuthenticating = false;
   @override
   void initState() {
     super.initState();
     final displayName = context.read<AppState>().displayName;
     _nameController = TextEditingController(text: displayName);
-    final authUser = context.read<AppState>().authUser;
-    _emailController = TextEditingController(text: authUser?.email ?? '');
-    _passwordController = TextEditingController();
   }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
     super.dispose();
   }
 
@@ -136,178 +129,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return _InfoCard(
         icon: Icons.verified_user_rounded,
         trailing: FilledButton.icon(
-          onPressed: _isAuthenticating ? null : () => _signOut(appState),
-          icon: const Icon(Icons.logout_rounded),
-          label: const Text('Sign out'),
+          onPressed: () =>
+              Navigator.of(context).pushNamed(SignOutScreen.routeName),
+          icon: const Icon(Icons.manage_accounts_rounded),
+          label: const Text('Manage'),
         ),
         title: name,
         message: '$email\nStories & favorites sync automatically.',
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Sign in to sync your stories & favorites across devices.',
-          style: theme.textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: _emailController,
-          enabled: !_isAuthenticating,
-          keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(
-            labelText: 'Email',
-            prefixIcon: Icon(Icons.email_outlined),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _passwordController,
-          enabled: !_isAuthenticating,
-          obscureText: true,
-          decoration: const InputDecoration(
-            labelText: 'Password',
-            prefixIcon: Icon(Icons.lock_outline),
-          ),
-        ),
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed:
-          _isAuthenticating ? null : () => _signInWithEmail(appState),
-          icon: _isAuthenticating
-              ? const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
-              : const Icon(Icons.mail_outline_rounded),
-          label: Text(_isAuthenticating ? 'Signing in…' : 'Sign in with email'),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(child: Divider(color: theme.dividerColor.withOpacity(0.3))),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
-              child: Text('or'),
-            ),
-            Expanded(child: Divider(color: theme.dividerColor.withOpacity(0.3))),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            OutlinedButton.icon(
-              onPressed:
-              _isAuthenticating ? null : () => _signInWithGoogle(appState),
-              icon: const Icon(Icons.g_mobiledata_rounded, size: 28),
-              label: const Text('Google'),
-            ),
-            OutlinedButton.icon(
-              onPressed:
-              _isAuthenticating ? null : () => _signInWithApple(appState),
-              icon: const Icon(Icons.apple_rounded),
-              label: const Text('Apple'),
-            ),
-          ],
-        ),
-      ],
+    return _InfoCard(
+      icon: Icons.cloud_sync_rounded,
+      title: 'Enable cloud sync',
+      message:
+      'Sign in with email, Google, or Apple to sync stories across devices.',
+      trailing: FilledButton.icon(
+        onPressed: () =>
+            Navigator.of(context).pushNamed(SignInScreen.routeName),
+        icon: const Icon(Icons.login_rounded),
+        label: const Text('Sign in'),
+      ),
     );
-  }
-
-  Future<void> _signInWithEmail(AppState appState) async {
-    FocusScope.of(context).unfocus();
-    setState(() => _isAuthenticating = true);
-    try {
-      await appState.signInWithEmail(
-        _emailController.text.trim(),
-        _passwordController.text,
-      );
-      if (mounted) {
-        _passwordController.clear();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Check your inbox if this is a new sign in.')),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isAuthenticating = false);
-      } else {
-        _isAuthenticating = false;
-      }
-    }
-  }
-
-  Future<void> _signInWithGoogle(AppState appState) async {
-    FocusScope.of(context).unfocus();
-    setState(() => _isAuthenticating = true);
-    try {
-      await appState.signInWithGoogle();
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.toString())));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isAuthenticating = false);
-      } else {
-        _isAuthenticating = false;
-      }
-    }
-  }
-
-  Future<void> _signInWithApple(AppState appState) async {
-    FocusScope.of(context).unfocus();
-    setState(() => _isAuthenticating = true);
-    try {
-      await appState.signInWithApple();
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.toString())));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isAuthenticating = false);
-      } else {
-        _isAuthenticating = false;
-      }
-    }
-  }
-
-  Future<void> _signOut(AppState appState) async {
-    FocusScope.of(context).unfocus();
-    setState(() => _isAuthenticating = true);
-    try {
-      await appState.signOut();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Signed out')),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.toString())));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isAuthenticating = false);
-      } else {
-        _isAuthenticating = false;
-      }
-    }
   }
 }
 

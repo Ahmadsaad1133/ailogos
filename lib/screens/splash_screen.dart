@@ -8,7 +8,7 @@ import '../widgets/branded_logo.dart';
 import '../widgets/gradient_background.dart';
 import 'home_screen.dart';
 import 'onboarding_screen.dart';
-
+import 'sign_in_screen.dart';
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -50,8 +50,13 @@ class _SplashScreenState extends State<SplashScreen>
 
   void _navigateNext() {
     if (!mounted) return;
-    final onboardingComplete = context.read<AppState>().onboardingComplete;
-    final destination = onboardingComplete
+    final appState = context.read<AppState>();
+    final onboardingComplete = appState.onboardingComplete;
+    final shouldPromptSignIn =
+        onboardingComplete && appState.authAvailable && !appState.isAuthenticated;
+    final destination = shouldPromptSignIn
+        ? SignInScreen.routeName
+        : onboardingComplete
         ? HomeScreen.routeName
         : OnboardingScreen.routeName;
     Navigator.of(context).pushReplacementNamed(destination);

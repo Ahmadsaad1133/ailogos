@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'models/app_state.dart';
 import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
@@ -11,6 +11,7 @@ import 'screens/settings_screen.dart';
 import 'services/history_service.dart';
 import 'services/preferences_service.dart';
 import 'services/story_generation_service.dart';
+import 'services/user_data_store.dart';
 import 'themes/app_theme.dart';
 
 Future<void> main() async {
@@ -19,8 +20,6 @@ Future<void> main() async {
   // Load .env for Groq credentials
   await dotenv.load(fileName: '.env');
 
-  final sharedPreferences = await SharedPreferences.getInstance();
-
   final groqKey = dotenv.env['GROQ_API_KEY'] ?? '';
   final groqModelId = dotenv.env['GROQ_MODEL_ID'] ?? 'llama-3.1-8b-instant';
   final openAiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
@@ -28,6 +27,24 @@ Future<void> main() async {
   final anthropicKey = dotenv.env['ANTHROPIC_API_KEY'] ?? '';
   final anthropicModel =
       dotenv.env['ANTHROPIC_MODEL_ID'] ?? 'claude-3-5-sonnet-20240620';
+  SupabaseClient? supabaseClient;
+  final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
+  final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
+  if (supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty) {
+    try {
+      await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
+      supabaseClient = Supabase.instance.client;
+    } catch (_) {
+      supabaseClient = null;
+    }
+  }
+
+  final sharedPreferences = await SharedPreferences.getInstance();
+  final dataStore = UserDataStore(
+    preferences: sharedPreferences,
+    client: supabaseClient,
+  );
+  await dataStore.initialise();
   final storyService = StoryGenerationService.fromEnvironment(
     groqApiKey: groqKey,
     groqModel: groqModelId,
@@ -37,8 +54,8 @@ Future<void> main() async {
     anthropicModel: anthropicModel,
   );
 
-  final historyService = HistoryService(sharedPreferences);
-  final preferencesService = PreferencesService(sharedPreferences);
+  final historyService = HistoryService(dataStore);
+  final preferencesService = PreferencesService(dataStore);
 
   runApp(
     ChangeNotifierProvider(

@@ -1,33 +1,20 @@
-import 'dart:convert';
-
-import 'package:shared_preferences/shared_preferences.dart';
-
 import '../models/generation_record.dart';
-
+import 'user_data_store.dart';
 class HistoryService {
-  HistoryService(this._preferences);
+  HistoryService(this._store);
 
-  final SharedPreferences _preferences;
+  final UserDataStore _store;
 
-  static const _storageKey = 'generation_history';
+  Future<List<GenerationRecord>> loadHistory() {
+    return _store.fetchHistory();
+  }
+  Stream<List<GenerationRecord>> get historyStream => _store.historyStream;
 
-  List<GenerationRecord> loadHistory() {
-    final raw = _preferences.getString(_storageKey);
-    if (raw == null || raw.isEmpty) {
-      return [];
-    }
-    try {
-      final decoded = jsonDecode(raw) as List<dynamic>;
-      return decoded
-          .map((entry) => GenerationRecord.fromJson(entry as Map<String, dynamic>))
-          .toList();
-    } catch (_) {
-      return [];
-    }
+  Future<void> addRecord(GenerationRecord record) {
+    return _store.upsertHistoryRecord(record);
   }
 
-  Future<void> saveHistory(List<GenerationRecord> history) async {
-    final encoded = jsonEncode(history.map((e) => e.toJson()).toList());
-    await _preferences.setString(_storageKey, encoded);
+  Future<void> clearHistory() {
+    return _store.clearHistory();
   }
 }

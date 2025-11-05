@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-
+import 'user_profile.dart';
 import '../services/history_service.dart';
 import '../services/preferences_service.dart';
 import '../services/service_exceptions.dart';
@@ -30,18 +30,19 @@ class AppState extends ChangeNotifier {
   String _streamingStory = '';
   String? _activeProviderId;
   StreamSubscription<dynamic>? _activeSubscription;
-  // 🔐 Premium & quota
+  StreamSubscription<List<GenerationRecord>>? _historySubscription;
+  StreamSubscription<UserProfile>? _profileSubscription;
   static const int _freeStoryQuota = 300;
   bool _isPremium = false;
   int _freeStoriesRemaining = _freeStoryQuota;
-
+  UserProfile _profile = UserProfile(userId: 'local');
   bool get initialised => _initialised;
   bool get isGenerating => _isGenerating;
   String? get errorMessage => _errorMessage;
   List<GenerationRecord> get history => List.unmodifiable(_history);
   Color get accentColor => _accent;
   String get displayName => _displayName ?? 'Creator';
-  bool get onboardingComplete => _preferencesService.onboardingComplete;
+  bool get onboardingComplete => _profile.onboardingComplete;
   String get streamingStory => _streamingStory;
   String? get activeProviderId => _activeProviderId;
   bool get hasStreamingStory => _streamingStory.isNotEmpty && _isGenerating;
@@ -57,18 +58,25 @@ class AppState extends ChangeNotifier {
   Future<void> initialise() async {
     if (_initialised) return;
 
-    // Load history from disk.
+    final history = await _historyService.loadHistory();
     _history
       ..clear()
-      ..addAll(_historyService.loadHistory());
+      ..addAll(history);
 
     // Load profile / preferences if available.
-    _displayName = _preferencesService.displayName;
+    final profile = await _preferencesService.loadProfile();
+    _applyProfile(profile, notify: false);
 
-    final accentHex = _preferencesService.accentHex;
-    if (accentHex != null) {
-      _accent = Color(accentHex);
-    }
+    _historySubscription = _historyService.historyStream.listen((records) {
+      _history
+        ..clear()
+        ..addAll(records);
+      notifyListeners();
+    });
+
+    _profileSubscription = _preferencesService.profileStream.listen((profile) {
+      _applyProfile(profile);
+    });
 
     // NOTE: For now, premium & free story budget are in-memory only.
     // You can persist these later via PreferencesService if you like.
@@ -158,7 +166,7 @@ class AppState extends ChangeNotifier {
         throw const AppServiceException('Story generation did not complete.');
       }
       _history.insert(0, record);
-      await _historyService.saveHistory(_history);
+      await _historyService.addRecord(record);
 
       // Decrease free quota only for free users.
       if (!_isPremium && _freeStoriesRemaining > 0) {
@@ -190,23 +198,26 @@ class AppState extends ChangeNotifier {
 
   Future<void> clearHistory() async {
     _history.clear();
-    await _historyService.saveHistory(_history);
+    await _historyService.clearHistory();
     notifyListeners();
   }
 
   Future<void> markOnboardingComplete() async {
+    _profile = _profile.copyWith(onboardingComplete: true);
     await _preferencesService.setOnboardingComplete(true);
     notifyListeners();
   }
 
   Future<void> updateDisplayName(String name) async {
     _displayName = name;
+    _profile = _profile.copyWith(displayName: name);
     await _preferencesService.setDisplayName(name);
     notifyListeners();
   }
 
   Future<void> updateAccent(Color color) async {
     _accent = color;
+    _profile = _profile.copyWith(accentHex: color.value);
     await _preferencesService.setAccentHex(color.value);
     notifyListeners();
   }
@@ -222,5 +233,23 @@ class AppState extends ChangeNotifier {
     // If you later add an `isFavorite` field to GenerationRecord,
     // you can update the record here and save history.
     notifyListeners();
+  }
+  void _applyProfile(UserProfile profile, {bool notify = true}) {
+    _profile = profile;
+    _displayName = profile.displayName;
+    if (profile.accentHex != null) {
+      _accent = Color(profile.accentHex!);
+    }
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    _activeSubscription?.cancel();
+    _historySubscription?.cancel();
+    _profileSubscription?.cancel();
+    super.dispose();
   }
 }

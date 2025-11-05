@@ -1,29 +1,25 @@
-import 'package:shared_preferences/shared_preferences.dart';
+import '../models/user_profile.dart';
+import 'user_data_store.dart';
 
 class PreferencesService {
-  PreferencesService(this._preferences);
+  PreferencesService(this._store);
+  final UserDataStore _store;
 
-  final SharedPreferences _preferences;
+  Stream<UserProfile> get profileStream => _store.profileStream;
 
-  static const _onboardingKey = 'onboarding_complete';
-  static const _displayNameKey = 'display_name';
-  static const _accentKey = 'accent_hex';
-
-  bool get onboardingComplete => _preferences.getBool(_onboardingKey) ?? false;
-
-  Future<void> setOnboardingComplete(bool value) async {
-    await _preferences.setBool(_onboardingKey, value);
+  Future<UserProfile> loadProfile() {
+    return _store.fetchProfile();
   }
 
-  String? get displayName => _preferences.getString(_displayNameKey);
-
-  Future<void> setDisplayName(String value) async {
-    await _preferences.setString(_displayNameKey, value);
+  Future<void> setOnboardingComplete(bool value) {
+    return _store.updateProfile(onboardingComplete: value);
   }
 
-  int? get accentHex => _preferences.getInt(_accentKey);
+  Future<void> setDisplayName(String value) {
+    return _store.updateProfile(displayName: value);
+  }
 
-  Future<void> setAccentHex(int value) async {
-    await _preferences.setInt(_accentKey, value);
+  Future<void> setAccentHex(int value) {
+    return _store.updateProfile(accentHex: value);
   }
 }

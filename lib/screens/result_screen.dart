@@ -288,6 +288,8 @@ class _ResultScreenState extends State<ResultScreen> {
 
     final theme = Theme.of(context);
     final colors = _resolveColors(theme);
+    final storyText = record.story.trim();
+    final hasStory = storyText.isNotEmpty;
 
     return GradientBackground(
       asset: 'lib/assets/backgrounds/obsdiv_result.svg',
@@ -308,54 +310,78 @@ class _ResultScreenState extends State<ResultScreen> {
           ],
         ),
         body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Prompt
-                Text('Prompt', style: theme.textTheme.labelMedium),
-                const SizedBox(height: 4),
-                Text(
-                  record.prompt,
-                  style: theme.textTheme.bodyLarge,
-                ),
-                const SizedBox(height: 16),
+          child: LayoutBuilder(
+          builder: (context, constraints) {
+    final availableHeight = constraints.maxHeight.isFinite
+    ? constraints.maxHeight
+        : MediaQuery.of(context).size.height;
+    final storyBoxHeight = (availableHeight * 0.55)
+        .clamp(220.0, 520.0) as double;
 
-                // Story box
-                Expanded(
-                  child: Hero(
-                    tag: 'story_${record.id}',
-                    child: Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
-                        color: colors.background,
-                        border: Border.all(color: colors.border),
+    return SingleChildScrollView(
+    padding: const EdgeInsets.all(20),
+    child: ConstrainedBox(
+    constraints: BoxConstraints(minHeight: availableHeight),
+    child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+    // Prompt
+    Text('Prompt', style: theme.textTheme.labelMedium),
+    const SizedBox(height: 4),
+    Text(
+    record.prompt,
+    style: theme.textTheme.bodyLarge,
                       ),
-                      padding: const EdgeInsets.all(20),
-                      child: Scrollbar(
-                        child: SingleChildScrollView(
-                          child: Text(
-                            record.story,
-                            style: theme.textTheme.bodyLarge?.copyWith(
-                              fontSize: _fontSize,
-                              height: 1.6,
-                              color: colors.text,
-                            ),
+    const SizedBox(height: 16),
+
+    // Story box
+    Hero(
+    tag: 'story_${record.id}',
+    child: Container(
+    width: double.infinity,
+    constraints: BoxConstraints(
+    minHeight: storyBoxHeight,
+    maxHeight: storyBoxHeight,
                           ),
+    decoration: BoxDecoration(
+    borderRadius: BorderRadius.circular(24),
+    color: colors.background,
+    border: Border.all(color: colors.border),
+    ),
+    padding: const EdgeInsets.all(20),
+    child: hasStory
+    ? Scrollbar(
+    thumbVisibility: true,
+    child: SingleChildScrollView(
+    child: SelectableText(
+    storyText,
+    style:
+    theme.textTheme.bodyLarge?.copyWith(
+    fontSize: _fontSize,
+    height: 1.6,
+    color: colors.text,
+    ),
+    ),
+    ),
+    )
+        : Center(
+    child: Text(
+    'No story text available for this result.',
+    style:
+    theme.textTheme.bodyMedium?.copyWith(
+    color: colors.text.withOpacity(0.7),
+    ),
+    textAlign: TextAlign.center,
+    ),
+    ),
                         ),
                       ),
-                    ),
-                  ),
-                ),
+    const SizedBox(height: 16),
 
-                const SizedBox(height: 16),
-
-                // 🎙 Engine selector + big play button
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+    // 🎙 Engine selector + big play button
+    Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
                     Wrap(
                       spacing: 8,
                       children: [
@@ -392,196 +418,214 @@ class _ResultScreenState extends State<ResultScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    if (_isLoadingAudio)
-                      const Center(
-                        child: SizedBox(
-                          width: 40,
-                          height: 40,
-                          child: CircularProgressIndicator(strokeWidth: 3),
-                        ),
-                      )
-                    else
-                      Center(
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(50),
-                          onTap: () {
-                            if (_isPlaying) {
-                              _stopAllAudio();
-                            } else {
-                              if (_selectedEngine == _TtsEngine.device) {
-                                _playDeviceTts(record.story);
-                              } else {
-                                _playGroqAudio(record.story);
-                              }
-                            }
-                          },
-                          child: Container(
-                            width: 80,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: theme.colorScheme.primary,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: theme.colorScheme.primary
-                                      .withOpacity(0.4),
-                                  blurRadius: 16,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: Icon(
-                              _isPlaying
-                                  ? Icons.stop_rounded
-                                  : Icons.play_arrow_rounded,
-                              color: Colors.white,
-                              size: 42,
+    const SizedBox(height: 10),
+    if (_isLoadingAudio)
+    const Center(
+    child: SizedBox(
+    width: 40,
+    height: 40,
+    child: CircularProgressIndicator(strokeWidth: 3),
+    ),
+    )
+    else
+    Center(
+    child: InkWell(
+    borderRadius: BorderRadius.circular(50),
+    onTap: hasStory
+    ? () {
+    if (_isPlaying) {
+    _stopAllAudio();
+    } else {
+    if (_selectedEngine ==
+    _TtsEngine.device) {
+    _playDeviceTts(storyText);
+    } else {
+    _playGroqAudio(storyText);
+    }
+    }
+    }
+        : null,
+    child: Container(
+    width: 80,
+    height: 80,
+    decoration: BoxDecoration(
+    shape: BoxShape.circle,
+    color: hasStory
+    ? theme.colorScheme.primary
+        : theme.colorScheme.primary
+        .withOpacity(0.4),
+    boxShadow: [
+    if (hasStory)
+    BoxShadow(
+    color: theme.colorScheme.primary
+        .withOpacity(0.4),
+    blurRadius: 16,
+    offset: const Offset(0, 4),
+    ),
+    ],
+    ),
+    child: Icon(
+    _isPlaying
+    ? Icons.stop_rounded
+        : Icons.play_arrow_rounded,
+    color: Colors.white,
+    size: 42,
+    ),
                             ),
                           ),
                         ),
-                      ),
-                    const SizedBox(height: 4),
-                    if (_selectedEngine == _TtsEngine.groq)
-                      Text(
-                        appState.isPremium
-                            ? 'AI voice plays a short preview of the story.'
-                            : 'AI voice is part of OBSDIV Premium.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.hintColor,
+    const SizedBox(height: 4),
+    if (_selectedEngine == _TtsEngine.groq)
+    Text(
+    appState.isPremium
+    ? 'AI voice plays a short preview of the story.'
+        : 'AI voice is part of OBSDIV Premium.',
+    style: theme.textTheme.bodySmall?.copyWith(
+    color: theme.hintColor,
+    ),
                         ),
-                      ),
-                  ],
-                ),
-
+    ],
+    ),
                 const SizedBox(height: 12),
 
-                // Reading theme + font size controls
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        _ThemeChip(
-                          label: 'Dark',
-                          selected: _readingTheme == _ReadingTheme.dark,
-                          onTap: () => setState(
-                                () => _readingTheme = _ReadingTheme.dark,
+    Row(
+    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    children: [
+    Wrap(
+    spacing: 8,
+    children: [
+    _ThemeChip(
+    label: 'Dark',
+    selected: _readingTheme == _ReadingTheme.dark,
+    onTap: () => setState(
+    () =>
+    _readingTheme = _ReadingTheme.dark,
+    ),
+    ),
+    _ThemeChip(
+    label: 'Light',
+    selected: _readingTheme == _ReadingTheme.light,
+    onTap: () => setState(
+    () =>
+    _readingTheme = _ReadingTheme.light,
+    ),
+    ),
+    _ThemeChip(
+    label: 'Sepia',
+    selected: _readingTheme == _ReadingTheme.sepia,
+    onTap: () => setState(
+    () =>
+    _readingTheme = _ReadingTheme.sepia,
+    ),
+    ),
+    ],
                           ),
-                        ),
-                        _ThemeChip(
-                          label: 'Light',
-                          selected: _readingTheme == _ReadingTheme.light,
-                          onTap: () => setState(
-                                () => _readingTheme = _ReadingTheme.light,
+    Row(
+    children: [
+    IconButton(
+    onPressed: () {
+    setState(() {
+    _fontSize =
+    (_fontSize - 1).clamp(14, 26);
+    });
+    },
+    icon: const Icon(Icons.remove),
+    ),
+    Text(
+    _fontSize.toInt().toString(),
+    style: theme.textTheme.bodySmall,
+    ),
+    IconButton(
+    onPressed: () {
+    setState(() {
+    _fontSize =
+    (_fontSize + 1).clamp(14, 26);
+    });
+    },
+    icon: const Icon(Icons.add),
+    ),
+    ],
                           ),
-                        ),
-                        _ThemeChip(
-                          label: 'Sepia',
-                          selected: _readingTheme == _ReadingTheme.sepia,
-                          onTap: () => setState(
-                                () => _readingTheme = _ReadingTheme.sepia,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        IconButton(
-                          onPressed: () {
-                            setState(() {
-                              _fontSize = (_fontSize - 1).clamp(14, 26);
-                            });
-                          },
-                          icon: const Icon(Icons.remove),
-                        ),
-                        Text(
-                          _fontSize.toInt().toString(),
-                          style: theme.textTheme.bodySmall,
-                        ),
-                        IconButton(
-                          onPressed: () {
-                            setState(() {
-                              _fontSize = (_fontSize + 1).clamp(14, 26);
-                            });
-                          },
-                          icon: const Icon(Icons.add),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+    ],
+    ),
+            const SizedBox(height: 8),
 
-                const SizedBox(height: 8),
-
-                // Actions
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 8,
-                  children: [
-                    _ResultActionButton(
-                      icon: Icons.copy_rounded,
-                      label: 'Copy story',
-                      onTap: () async {
-                        await Clipboard.setData(
-                          ClipboardData(text: record.story),
-                        );
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Story copied to clipboard'),
-                          ),
-                        );
-                      },
-                    ),
-                    _ResultActionButton(
-                      icon: Icons.home_rounded,
-                      label: 'Home',
-                      onTap: () {
-                        Navigator.of(context).pushNamedAndRemoveUntil(
-                          HomeScreen.routeName,
-                              (route) => false,
-                        );
-                      },
-                    ),
-                    _ResultActionButton(
-                      icon: Icons.history_edu_rounded,
-                      label: 'History',
-                      onTap: () {
-                        Navigator.of(context)
-                            .pushNamed(HistoryScreen.routeName);
-                      },
-                    ),
-                    _ResultActionButton(
-                      icon: Icons.auto_stories_rounded,
-                      label: 'Continue story',
-                      onTap: () async {
-                        final state = context.read<AppState>();
-                        final newRecord = await state.generateImage(
-                          record.prompt,
-                          genre: record.genre,
-                          lengthLabel: record.lengthLabel,
-                          continueFromPrevious: true,
-                          previousStory: record.story,
-                        );
-                        if (!context.mounted || newRecord == null) return;
-                        await Navigator.of(context).pushReplacementNamed(
-                          ResultScreen.routeName,
-                          arguments: newRecord,
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ],
+            // Actions
+            Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+            _ResultActionButton(
+            icon: Icons.copy_rounded,
+            label: 'Copy story',
+            onTap: hasStory
+            ? () async {
+            await Clipboard.setData(
+            ClipboardData(text: storyText),
+            );
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+            content:
+            Text('Story copied to clipboard'),
             ),
+            );
+            }
+            : null,
+                          ),
+    _ResultActionButton(
+    icon: Icons.home_rounded,
+    label: 'Home',
+    onTap: () {
+    Navigator.of(context)
+        .popUntil((route) => route.isFirst);
+    },
+    ),
+    _ResultActionButton(
+    icon: Icons.history_edu_rounded,
+    label: 'History',
+    onTap: () {
+    Navigator.of(context)
+        .pushNamed(HistoryScreen.routeName);
+    },
+    ),
+    _ResultActionButton(
+    icon: Icons.auto_stories_rounded,
+    label: 'Continue story',
+    onTap: hasStory
+    ? () async {
+    final state = context.read<AppState>();
+    final newRecord = await state.generateImage(
+    record.prompt,
+    genre: record.genre,
+    lengthLabel: record.lengthLabel,
+    continueFromPrevious: true,
+    previousStory: storyText,
+    );
+    if (!context.mounted ||
+    newRecord == null) return;
+    await Navigator.of(context)
+        .pushReplacementNamed(
+    ResultScreen.routeName,
+    arguments: newRecord,
+    );
+    }
+        : null,
+    ),
+    ],
+    ),
+
+    const SizedBox(height: 24),
+    ],
+    ),
+    ),
+    );
+          },
           ),
         ),
       ),
     );
   }
-
   _StoryColors _resolveColors(ThemeData theme) {
     switch (_readingTheme) {
       case _ReadingTheme.dark:
@@ -663,33 +707,36 @@ class _ResultActionButton extends StatelessWidget {
 
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDisabled = onTap == null;
+    final borderColor = theme.colorScheme.primary.withOpacity(isDisabled ? 0.2 : 0.4);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          color: theme.colorScheme.surface.withOpacity(0.85),
-          border: Border.all(
-            color: theme.colorScheme.primary.withOpacity(0.4),
+      child: Opacity(
+        opacity: isDisabled ? 0.6 : 1,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            color: theme.colorScheme.surface.withOpacity(0.85),
+            border: Border.all(color: borderColor),
           ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: theme.colorScheme.primary),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
         ),
       ),
     );

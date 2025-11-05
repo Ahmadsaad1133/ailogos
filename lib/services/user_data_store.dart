@@ -27,12 +27,14 @@ class UserDataStore {
   static const _profileCacheKey = 'sync.cache.profile.v1';
   static const _pendingHistoryKey = 'sync.queue.history.v1';
   static const _pendingProfileKey = 'sync.queue.profile.v1';
-  static const _userIdKey = 'sync.user_id';
+  static const _activeUserIdKey = 'sync.user_id.active';
+  static const _localUserIdKey = 'sync.user_id.local';
 
   final SupabaseClient? _client;
   final SharedPreferences _preferences;
   final Connectivity _connectivity;
   late String _userId;
+  String? _localUserId;
   List<StoryRecord> _history = [];
   UserProfile? _profile;
   bool _initialised = false;
@@ -49,18 +51,7 @@ class UserDataStore {
     if (_initialised) return;
 
     await _ensureSchema();
-    _history = _loadHistoryCache();
-    _profile = _loadProfileCache();
-    _pendingHistoryQueue
-      ..clear()
-      ..addAll(_loadPendingHistoryQueue());
-    _pendingProfileQueue
-      ..clear()
-      ..addAll(_loadPendingProfileQueue());
-
-    // Always seed streams with the cached data immediately.
-    _historyController.add(List.unmodifiable(_history));
-    _profileController.add(_profile!);
+    await _loadStateForUser(_userId);
 
     await _refreshConnectivityStatus();
     _connectivitySubscription =
@@ -77,7 +68,34 @@ class UserDataStore {
   Stream<UserProfile> get profileStream => _profileController.stream;
 
   String get userId => _userId;
+  String? get localUserId => _localUserId;
 
+  Future<void> useUser(String userId, {bool persist = true}) async {
+    if (!_initialised) {
+      await initialise();
+    }
+    if (userId.isEmpty) return;
+    if (_userId == userId) return;
+    _userId = userId;
+    if (persist) {
+      await _preferences.setString(_activeUserIdKey, userId);
+    }
+    await _loadStateForUser(userId);
+    await _pullRemoteState();
+    await _flushPendingQueues();
+  }
+
+  Future<void> useLocalUser() async {
+    if (!_initialised) {
+      await initialise();
+      return;
+    }
+    final localId = _localUserId ?? _preferences.getString(_localUserIdKey);
+    if (localId == null || localId.isEmpty) {
+      return;
+    }
+    await useUser(localId);
+  }
   Future<List<StoryRecord>> fetchHistory() async {
     if (!_initialised) {
       await initialise();
@@ -154,24 +172,59 @@ class UserDataStore {
   Future<void> _ensureSchema() async {
     final schemaVersion = _preferences.getInt(_schemaKey);
     if (schemaVersion != _schemaVersion) {
-      await _preferences.remove(_historyCacheKey);
-      await _preferences.remove(_profileCacheKey);
-      await _preferences.remove(_pendingHistoryKey);
-      await _preferences.remove(_pendingProfileKey);
+      await _clearAllCacheData();
       await _preferences.setInt(_schemaKey, _schemaVersion);
     }
 
-    final storedId = _preferences.getString(_userIdKey);
-    if (storedId == null || storedId.isEmpty) {
-      _userId = const Uuid().v4();
-      await _preferences.setString(_userIdKey, _userId);
+    final storedLocalId = _preferences.getString(_localUserIdKey);
+    if (storedLocalId == null || storedLocalId.isEmpty) {
+      _localUserId = const Uuid().v4();
+      await _preferences.setString(_localUserIdKey, _localUserId!);
     } else {
-      _userId = storedId;
+      _localUserId = storedLocalId;
+    }
+
+    final storedActiveId = _preferences.getString(_activeUserIdKey);
+    if (storedActiveId == null || storedActiveId.isEmpty) {
+      _userId = _localUserId!;
+      await _preferences.setString(_activeUserIdKey, _userId);
+    } else {
+      _userId = storedActiveId;
     }
   }
 
-  List<StoryRecord> _loadHistoryCache() {
-    final raw = _preferences.getString(_historyCacheKey);
+  Future<void> _clearAllCacheData() async {
+    final keys = _preferences.getKeys();
+    for (final key in keys) {
+      if (key.startsWith(_historyCacheKey) ||
+          key.startsWith(_profileCacheKey) ||
+          key.startsWith(_pendingHistoryKey) ||
+          key.startsWith(_pendingProfileKey) ||
+          key == _activeUserIdKey ||
+          key == _localUserIdKey) {
+        await _preferences.remove(key);
+      }
+    }
+  }
+
+  String _keyForUser(String base, String userId) => '$base.$userId';
+
+  Future<void> _loadStateForUser(String userId) async {
+    _history = _loadHistoryCache(userId);
+    _profile = _loadProfileCache(userId);
+    _pendingHistoryQueue
+      ..clear()
+      ..addAll(_loadPendingHistoryQueue(userId));
+    _pendingProfileQueue
+      ..clear()
+      ..addAll(_loadPendingProfileQueue(userId));
+
+    _historyController.add(List.unmodifiable(_history));
+    _profileController.add(_profile!);
+  }
+
+  List<StoryRecord> _loadHistoryCache(String userId) {
+    final raw = _preferences.getString(_keyForUser(_historyCacheKey, userId));
     if (raw == null || raw.isEmpty) {
       return [];
     }
@@ -184,24 +237,25 @@ class UserDataStore {
     }
   }
 
-  UserProfile _loadProfileCache() {
-    final raw = _preferences.getString(_profileCacheKey);
+  UserProfile _loadProfileCache(String userId) {
+    final raw = _preferences.getString(_keyForUser(_profileCacheKey, userId));
     if (raw == null || raw.isEmpty) {
-      return UserProfile.anonymous(_userId);
+      return UserProfile.anonymous(userId);
     }
     try {
       final profile = UserProfile.decode(raw);
-      if (profile.userId.isEmpty || profile.userId != _userId) {
-        return profile.copyWith(userId: _userId);
+      if (profile.userId.isEmpty || profile.userId != userId) {
+        return profile.copyWith(userId: userId);
       }
       return profile;
     } catch (_) {
-      return UserProfile.anonymous(_userId);
+      return UserProfile.anonymous(userId);
     }
   }
 
-  List<_PendingHistoryAction> _loadPendingHistoryQueue() {
-    final raw = _preferences.getString(_pendingHistoryKey);
+  List<_PendingHistoryAction> _loadPendingHistoryQueue(String userId) {
+    final raw =
+    _preferences.getString(_keyForUser(_pendingHistoryKey, userId));
     if (raw == null || raw.isEmpty) {
       return const [];
     }
@@ -217,8 +271,9 @@ class UserDataStore {
     }
   }
 
-  List<_PendingProfileUpdate> _loadPendingProfileQueue() {
-    final raw = _preferences.getString(_pendingProfileKey);
+  List<_PendingProfileUpdate> _loadPendingProfileQueue(String userId) {
+    final raw =
+    _preferences.getString(_keyForUser(_pendingProfileKey, userId));
     if (raw == null || raw.isEmpty) {
       return const [];
     }
@@ -235,43 +290,48 @@ class UserDataStore {
   }
 
   Future<void> _cacheHistory() async {
+    final key = _keyForUser(_historyCacheKey, _userId);
     if (_history.isEmpty) {
-      await _preferences.remove(_historyCacheKey);
+      await _preferences.remove(key);
     } else {
       await _preferences.setString(
-        _historyCacheKey,
+        key,
         StoryRecord.encodeList(_history),
       );
     }
   }
 
   Future<void> _cacheProfile() async {
+    final key = _keyForUser(_profileCacheKey, _userId);
     await _preferences.setString(
-      _profileCacheKey,
+      key,
       UserProfile.encode(_profile!),
     );
   }
 
   Future<void> _savePendingHistoryQueue() async {
+    final key = _keyForUser(_pendingHistoryKey, _userId);
     if (_pendingHistoryQueue.isEmpty) {
-      await _preferences.remove(_pendingHistoryKey);
+      await _preferences.remove(key);
       return;
     }
     final payload = jsonEncode(
       _pendingHistoryQueue.map((e) => e.toJson()).toList(),
     );
-    await _preferences.setString(_pendingHistoryKey, payload);
+    await _preferences.setString(key, payload);
   }
 
   Future<void> _savePendingProfileQueue() async {
+
+    final key = _keyForUser(_pendingHistoryKey, _userId);
     if (_pendingProfileQueue.isEmpty) {
-      await _preferences.remove(_pendingProfileKey);
+      await _preferences.remove(key);
       return;
     }
     final payload = jsonEncode(
       _pendingProfileQueue.map((e) => e.toJson()).toList(),
     );
-    await _preferences.setString(_pendingProfileKey, payload);
+    await _preferences.setString(key, payload);
   }
 
   Future<void> _refreshConnectivityStatus() async {

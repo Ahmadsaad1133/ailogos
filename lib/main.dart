@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:powered_by_obsdiv/screens/onboarding_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -8,6 +9,7 @@ import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/result_screen.dart';
 import 'screens/settings_screen.dart';
+import 'services/auth_service.dart';
 import 'services/history_service.dart';
 import 'services/preferences_service.dart';
 import 'services/story_generation_service.dart';
@@ -38,13 +40,17 @@ Future<void> main() async {
       supabaseClient = null;
     }
   }
-
+  final supabaseRedirect = dotenv.env['SUPABASE_REDIRECT_URI'];
   final sharedPreferences = await SharedPreferences.getInstance();
   final dataStore = UserDataStore(
     preferences: sharedPreferences,
     client: supabaseClient,
   );
   await dataStore.initialise();
+  final authService = AuthService(
+    client: supabaseClient,
+    redirectUrl: supabaseRedirect,
+  );
   final storyService = StoryGenerationService.fromEnvironment(
     groqApiKey: groqKey,
     groqModel: groqModelId,
@@ -63,6 +69,8 @@ Future<void> main() async {
         storyService: storyService,
         historyService: historyService,
         preferencesService: preferencesService,
+        dataStore: dataStore,
+        authService: authService,
       )..initialise(),
       child: const OBSDIVApp(),
     ),
@@ -78,7 +86,7 @@ class OBSDIVApp extends StatelessWidget {
       title: 'Powered by OBSDIV',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
-      home: const HomeScreen(),
+      home: const OnboardingScreen(),
       onGenerateRoute: (settings) {
         switch (settings.name) {
           case HomeScreen.routeName:

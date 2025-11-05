@@ -1,25 +1,33 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'user_profile.dart';
+import '../services/auth_service.dart';
 import '../services/history_service.dart';
 import '../services/preferences_service.dart';
 import '../services/service_exceptions.dart';
 import '../services/story_generation_service.dart';
+import '../services/user_data_store.dart';
 import '../themes/colors.dart';
 import 'generation_record.dart';
+import 'user_profile.dart';
 
 class AppState extends ChangeNotifier {
   AppState({
     required StoryGenerationService storyService,
     required HistoryService historyService,
     required PreferencesService preferencesService,
+    required UserDataStore dataStore,
+    AuthService? authService,
   })  : _storyService = storyService,
         _historyService = historyService,
-        _preferencesService = preferencesService;
+        _preferencesService = preferencesService,
+        _dataStore = dataStore,
+        _authService = authService;
 
   final StoryGenerationService _storyService;
   final HistoryService _historyService;
   final PreferencesService _preferencesService;
+  final UserDataStore _dataStore;
+  final AuthService? _authService;
 
   bool _initialised = false;
   bool _isGenerating = false;
@@ -32,10 +40,12 @@ class AppState extends ChangeNotifier {
   StreamSubscription<dynamic>? _activeSubscription;
   StreamSubscription<List<GenerationRecord>>? _historySubscription;
   StreamSubscription<UserProfile>? _profileSubscription;
+  StreamSubscription<AuthUser?>? _authSubscription;
   static const int _freeStoryQuota = 300;
   bool _isPremium = false;
   int _freeStoriesRemaining = _freeStoryQuota;
   UserProfile _profile = UserProfile(userId: 'local');
+  AuthUser? _authUser;
   bool get initialised => _initialised;
   bool get isGenerating => _isGenerating;
   String? get errorMessage => _errorMessage;
@@ -49,15 +59,34 @@ class AppState extends ChangeNotifier {
   bool get isPremium => _isPremium;
   int get freeStoriesRemaining => _freeStoriesRemaining.clamp(0, _freeStoryQuota);
   int get freeStoryQuota => _freeStoryQuota;
+  bool get authAvailable => _authService?.isAvailable ?? false;
+  bool get isAuthenticated => _authUser != null;
+  AuthUser? get authUser => _authUser;
 
   set errorMessage(String? value) {
     _errorMessage = value;
     notifyListeners();
   }
-
+  Future<void> _prepareUserSession({bool initial = false}) async {
+    if (_authService == null || !_authService!.isAvailable) {
+      await _dataStore.useLocalUser();
+      _authUser = null;
+      return;
+    }
+    final user = _authService!.currentUser;
+    _authUser = user;
+    if (user != null) {
+      await _dataStore.useUser(user.id);
+    } else {
+      await _dataStore.useLocalUser();
+    }
+    if (initial && user != null && _displayName == null) {
+      _displayName = user.displayName ?? user.email?.split('@').first;
+    }
+  }
   Future<void> initialise() async {
     if (_initialised) return;
-
+    await _prepareUserSession(initial: true);
     final history = await _historyService.loadHistory();
     _history
       ..clear()
@@ -77,7 +106,9 @@ class AppState extends ChangeNotifier {
     _profileSubscription = _preferencesService.profileStream.listen((profile) {
       _applyProfile(profile);
     });
-
+    _authSubscription = _authService?.onAuthStateChanged.listen((user) {
+      unawaited(_handleAuthUserChanged(user));
+    });
     // NOTE: For now, premium & free story budget are in-memory only.
     // You can persist these later via PreferencesService if you like.
 
@@ -227,12 +258,78 @@ class AppState extends ChangeNotifier {
     _freeStoriesRemaining = _freeStoryQuota;
     notifyListeners();
   }
-  // TEMP: stub to satisfy HistoryScreen / tiles.
-  // Currently does nothing. We can wire real favorites later.
+
   void toggleFavorite(GenerationRecord record) {
-    // If you later add an `isFavorite` field to GenerationRecord,
-    // you can update the record here and save history.
+    final index = _history.indexWhere((element) => element.id == record.id);
+    if (index == -1) return;
+    final updated = record.copyWith(
+      isFavorite: !record.isFavorite,
+      updatedAt: DateTime.now().toUtc(),
+    );
+    _history[index] = updated;
     notifyListeners();
+    unawaited(_historyService.addRecord(updated));
+  }
+
+  Future<void> signInWithEmail(String email, String password) async {
+    final service = _authService;
+    if (service == null || !service.isAvailable) {
+      throw const AuthFlowException('Cloud sync is not configured.');
+    }
+    await service.signInWithEmail(email, password);
+  }
+
+  Future<void> signInWithGoogle() async {
+    final service = _authService;
+    if (service == null || !service.isAvailable) {
+      throw const AuthFlowException('Cloud sync is not configured.');
+    }
+    await service.signInWithGoogle();
+  }
+
+  Future<void> signInWithApple() async {
+    final service = _authService;
+    if (service == null || !service.isAvailable) {
+      throw const AuthFlowException('Cloud sync is not configured.');
+    }
+    await service.signInWithApple();
+  }
+
+  Future<void> signOut() async {
+    final service = _authService;
+    if (service == null || !service.isAvailable) {
+      _authUser = null;
+      await _dataStore.useLocalUser();
+      await _reloadUserState();
+      return;
+    }
+    await service.signOut();
+    _authUser = null;
+    await _dataStore.useLocalUser();
+    await _reloadUserState();
+  }
+
+  Future<void> _handleAuthUserChanged(AuthUser? user) async {
+    _authUser = user;
+    if (user != null) {
+      await _dataStore.useUser(user.id);
+    } else {
+      await _dataStore.useLocalUser();
+    }
+    await _reloadUserState();
+    if (_displayName == null && user != null) {
+      _displayName = user.displayName ?? user.email?.split('@').first;
+    }
+    notifyListeners();
+  }
+
+  Future<void> _reloadUserState() async {
+    final history = await _historyService.loadHistory();
+    _history
+      ..clear()
+      ..addAll(history);
+    final profile = await _preferencesService.loadProfile();
+    _applyProfile(profile, notify: false);
   }
   void _applyProfile(UserProfile profile, {bool notify = true}) {
     _profile = profile;
@@ -250,6 +347,8 @@ class AppState extends ChangeNotifier {
     _activeSubscription?.cancel();
     _historySubscription?.cancel();
     _profileSubscription?.cancel();
+    _authSubscription?.cancel();
+    unawaited(_authService?.dispose());
     super.dispose();
   }
 }

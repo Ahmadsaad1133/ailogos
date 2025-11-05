@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/history_service.dart';
@@ -26,7 +27,9 @@ class AppState extends ChangeNotifier {
   final List<GenerationRecord> _history = <GenerationRecord>[];
   Color _accent = AppColors.accent;
   String? _displayName;
-
+  String _streamingStory = '';
+  String? _activeProviderId;
+  StreamSubscription<dynamic>? _activeSubscription;
   // 🔐 Premium & quota
   static const int _freeStoryQuota = 300;
   bool _isPremium = false;
@@ -39,7 +42,9 @@ class AppState extends ChangeNotifier {
   Color get accentColor => _accent;
   String get displayName => _displayName ?? 'Creator';
   bool get onboardingComplete => _preferencesService.onboardingComplete;
-
+  String get streamingStory => _streamingStory;
+  String? get activeProviderId => _activeProviderId;
+  bool get hasStreamingStory => _streamingStory.isNotEmpty && _isGenerating;
   bool get isPremium => _isPremium;
   int get freeStoriesRemaining => _freeStoriesRemaining.clamp(0, _freeStoryQuota);
   int get freeStoryQuota => _freeStoryQuota;
@@ -107,10 +112,15 @@ class AppState extends ChangeNotifier {
 
     _isGenerating = true;
     _errorMessage = null;
+    _streamingStory = '';
+    _activeProviderId = null;
+    await _activeSubscription?.cancel();
+    _activeSubscription = null;
     notifyListeners();
 
     try {
-      final storyRecord = await _storyService.craftStory(
+      GenerationRecord? storyRecord;
+      final stream = _storyService.craftStoryStream(
         prompt: trimmed,
         genre: genre,
         lengthLabel: lengthLabel,
@@ -118,8 +128,35 @@ class AppState extends ChangeNotifier {
         previousStory: previousStory,
         userName: _displayName,
       );
-      final GenerationRecord record = storyRecord;
+      final completer = Completer<GenerationRecord?>();
+      _activeSubscription = stream.listen(
+            (progress) {
+          _activeProviderId ??= progress.providerId;
+          _streamingStory = progress.buffer;
+          if (progress.record != null) {
+            storyRecord = progress.record;
+          }
+          notifyListeners();
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          if (!completer.isCompleted) {
+            completer.completeError(error, stackTrace);
+          }
+        },
+        onDone: () {
+          if (!completer.isCompleted) {
+            completer.complete(storyRecord);
+          }
+        },
+        cancelOnError: true,
+      );
 
+      final record = await completer.future;
+      await _activeSubscription?.cancel();
+      _activeSubscription = null;
+      if (record == null) {
+        throw const AppServiceException('Story generation did not complete.');
+      }
       _history.insert(0, record);
       await _historyService.saveHistory(_history);
 
@@ -142,7 +179,11 @@ class AppState extends ChangeNotifier {
       _errorMessage = 'Unexpected error: $e';
       return null;
     } finally {
+      await _activeSubscription?.cancel();
+      _activeSubscription = null;
       _isGenerating = false;
+      _streamingStory = '';
+      _activeProviderId = null;
       notifyListeners();
     }
   }

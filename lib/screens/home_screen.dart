@@ -358,7 +358,45 @@ class _HomeScreenState extends State<HomeScreen> {
                         isBusy: appState.isGenerating,
                         onPressed: () => _handleGenerate(appState),
                       ),
-
+                      if (appState.hasStreamingStory) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface.withOpacity(0.85),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: theme.colorScheme.primary.withOpacity(0.2),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.bolt_rounded, size: 18),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    "Streaming from ${appState.activeProviderId ?? 'model'}...",
+                                    style: theme.textTheme.labelMedium,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxHeight: 200),
+                                child: SingleChildScrollView(
+                                  child: Text(
+                                    appState.streamingStory,
+                                    style: theme.textTheme.bodyMedium,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 24),
 
                       if (lastRecord != null) ...[

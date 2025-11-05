@@ -23,10 +23,18 @@ Future<void> main() async {
 
   final groqKey = dotenv.env['GROQ_API_KEY'] ?? '';
   final groqModelId = dotenv.env['GROQ_MODEL_ID'] ?? 'llama-3.1-8b-instant';
-
-  final storyService = StoryGenerationService(
-    apiKey: groqKey,
-    modelId: groqModelId,
+  final openAiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
+  final openAiModel = dotenv.env['OPENAI_MODEL_ID'] ?? 'gpt-4o-mini';
+  final anthropicKey = dotenv.env['ANTHROPIC_API_KEY'] ?? '';
+  final anthropicModel =
+      dotenv.env['ANTHROPIC_MODEL_ID'] ?? 'claude-3-5-sonnet-20240620';
+  final storyService = StoryGenerationService.fromEnvironment(
+    groqApiKey: groqKey,
+    groqModel: groqModelId,
+    openAiKey: openAiKey,
+    openAiModel: openAiModel,
+    anthropicKey: anthropicKey,
+    anthropicModel: anthropicModel,
   );
 
   final historyService = HistoryService(sharedPreferences);

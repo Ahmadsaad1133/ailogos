@@ -7,68 +7,121 @@ import '../widgets/gradient_background.dart';
 import '../widgets/history_tile.dart';
 import 'result_screen.dart';
 
-class HistoryScreen extends StatelessWidget {
+class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
 
   static const routeName = '/history';
 
   @override
+  State<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends State<HistoryScreen> {
+  bool _showFavoritesOnly = false;
+  String _searchQuery = '';
+
+  @override
   Widget build(BuildContext context) {
-    final history = context.watch<AppState>().history;
+    final appState = context.watch<AppState>();
+    final history = appState.history;
+    final theme = Theme.of(context);
+
+    List<GenerationRecord> filtered = history;
+
+    if (_showFavoritesOnly) {
+      filtered =
+          filtered.where((r) => r.isFavorite).toList();
+    }
+
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      filtered = filtered.where((r) {
+        return r.prompt.toLowerCase().contains(q) ||
+            r.story.toLowerCase().contains(q);
+      }).toList();
+    }
+
     return GradientBackground(
       asset: 'lib/assets/backgrounds/obsdiv_history.svg',
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const Text('Creation History'),
+          title: const Text('Story History'),
+          centerTitle: true,
         ),
-        body: history.isEmpty
-            ? const _EmptyHistory()
-            : ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          itemBuilder: (context, index) {
-            final record = history[index];
-            return HistoryTile(
-              record: record,
-              onTap: () => _openRecord(context, record),
-            );
-          },
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemCount: history.length,
+        body: Column(
+          children: [
+            Padding(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: TextField(
+                decoration: const InputDecoration(
+                  labelText: 'Search in your stories',
+                  prefixIcon: Icon(Icons.search),
+                ),
+                onChanged: (value) {
+                  setState(() => _searchQuery = value);
+                },
+              ),
+            ),
+            Padding(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  ChoiceChip(
+                    label: const Text('All'),
+                    selected: !_showFavoritesOnly,
+                    onSelected: (value) {
+                      setState(() => _showFavoritesOnly = !value);
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text('Favorites'),
+                    selected: _showFavoritesOnly,
+                    onSelected: (value) {
+                      setState(() => _showFavoritesOnly = value);
+                    },
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${filtered.length} story${filtered.length == 1 ? '' : 'ies'}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            Expanded(
+              child: filtered.isEmpty
+                  ? const Center(
+                child: Text('No stories match your filters.'),
+              )
+                  : ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: filtered.length,
+                separatorBuilder: (_, __) =>
+                const SizedBox(height: 10),
+                itemBuilder: (context, index) {
+                  final GenerationRecord record = filtered[index];
+                  return HistoryTile(
+                    record: record,
+                    onTap: () {
+                      Navigator.of(context).pushNamed(
+                        ResultScreen.routeName,
+                        arguments: record,
+                      );
+                    },
+                    onToggleFavorite: () => context
+                        .read<AppState>()
+                        .toggleFavorite(record),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
-      ),
-    );
-  }
-
-  void _openRecord(BuildContext context, GenerationRecord record) {
-    Navigator.of(context).pushNamed(
-      ResultScreen.routeName,
-      arguments: record,
-    );
-  }
-}
-
-class _EmptyHistory extends StatelessWidget {
-  const _EmptyHistory();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.amp_stories_rounded, size: 56, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(height: 16),
-          Text(
-            'No creations yet',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Your generated masterpieces will appear here.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ],
       ),
     );
   }

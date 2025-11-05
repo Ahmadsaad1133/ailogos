@@ -1,28 +1,24 @@
 import 'package:flutter/material.dart';
 
 import '../services/history_service.dart';
-import '../services/image_generation_service.dart';
 import '../services/preferences_service.dart';
 import '../services/service_exceptions.dart';
-import '../services/storage_service.dart';
+import '../services/story_generation_service.dart';
 import '../themes/colors.dart';
 import 'generation_record.dart';
 
 class AppState extends ChangeNotifier {
   AppState({
-    required ImageGenerationService imageService,
+    required StoryGenerationService storyService,
     required HistoryService historyService,
     required PreferencesService preferencesService,
-    StorageService? storageService,
-  })  : _imageService = imageService,
+  })  : _storyService = storyService,
         _historyService = historyService,
-        _preferencesService = preferencesService,
-        _storageService = storageService ?? const StorageService();
+        _preferencesService = preferencesService;
 
-  final ImageGenerationService _imageService;
+  final StoryGenerationService _storyService;
   final HistoryService _historyService;
   final PreferencesService _preferencesService;
-  final StorageService _storageService;
 
   bool _initialised = false;
   bool _isGenerating = false;
@@ -31,13 +27,22 @@ class AppState extends ChangeNotifier {
   Color _accent = AppColors.accent;
   String? _displayName;
 
+  // 🔐 Premium & quota
+  static const int _freeStoryQuota = 300;
+  bool _isPremium = false;
+  int _freeStoriesRemaining = _freeStoryQuota;
+
   bool get initialised => _initialised;
   bool get isGenerating => _isGenerating;
   String? get errorMessage => _errorMessage;
   List<GenerationRecord> get history => List.unmodifiable(_history);
   Color get accentColor => _accent;
-  String? get displayName => _displayName;
+  String get displayName => _displayName ?? 'Creator';
   bool get onboardingComplete => _preferencesService.onboardingComplete;
+
+  bool get isPremium => _isPremium;
+  int get freeStoriesRemaining => _freeStoriesRemaining.clamp(0, _freeStoryQuota);
+  int get freeStoryQuota => _freeStoryQuota;
 
   set errorMessage(String? value) {
     _errorMessage = value;
@@ -47,10 +52,12 @@ class AppState extends ChangeNotifier {
   Future<void> initialise() async {
     if (_initialised) return;
 
+    // Load history from disk.
     _history
       ..clear()
       ..addAll(_historyService.loadHistory());
 
+    // Load profile / preferences if available.
     _displayName = _preferencesService.displayName;
 
     final accentHex = _preferencesService.accentHex;
@@ -58,16 +65,42 @@ class AppState extends ChangeNotifier {
       _accent = Color(accentHex);
     }
 
+    // NOTE: For now, premium & free story budget are in-memory only.
+    // You can persist these later via PreferencesService if you like.
+
     _initialised = true;
     notifyListeners();
   }
 
-  /// هيدي الفنكشن اللي بيناديها الـ HomeScreen:
-  /// state.generateImage(prompt)
-  Future<GenerationRecord?> generateImage(String prompt) async {
+  /// Activates premium mode (called after a real purchase in the future).
+  void activatePremium() {
+    if (_isPremium) return;
+    _isPremium = true;
+    notifyListeners();
+  }
+
+  /// Generates a story.
+  ///
+  /// [genre] and [lengthLabel] are optional UI hints (e.g. "Horror", "Short").
+  /// [continueFromPrevious]: if true, [previousStory] is used as base.
+  Future<GenerationRecord?> generateImage(
+      String prompt, {
+        String? genre,
+        String? lengthLabel,
+        bool continueFromPrevious = false,
+        String? previousStory,
+      }) async {
     final trimmed = prompt.trim();
     if (trimmed.isEmpty) {
       _errorMessage = 'Please enter a prompt first.';
+      notifyListeners();
+      return null;
+    }
+
+    // 🔐 Free tier limit: 300 stories (in-memory).
+    if (!_isPremium && _freeStoriesRemaining <= 0) {
+      _errorMessage =
+      'You have used all your 300 free stories.\nUnlock OBSDIV Premium to keep generating stories with real voices and long lengths.';
       notifyListeners();
       return null;
     }
@@ -77,11 +110,23 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final record = await _imageService.generateImage(prompt: trimmed);
+      final storyRecord = await _storyService.craftStory(
+        prompt: trimmed,
+        genre: genre,
+        lengthLabel: lengthLabel,
+        continueStory: continueFromPrevious,
+        previousStory: previousStory,
+        userName: _displayName,
+      );
+      final GenerationRecord record = storyRecord;
 
-      // حطّ الصورة الجديدة بأول الـ history
       _history.insert(0, record);
       await _historyService.saveHistory(_history);
+
+      // Decrease free quota only for free users.
+      if (!_isPremium && _freeStoriesRemaining > 0) {
+        _freeStoriesRemaining--;
+      }
 
       return record;
     } on MissingApiKeyException catch (e) {
@@ -125,11 +170,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String> saveImage(GenerationRecord record) async {
-    return _storageService.saveToGallery(record.imageBytes, record.id);
+  /// Debug helper: reset free stories (e.g. for testing).
+  void resetFreeStoriesForDebug() {
+    _freeStoriesRemaining = _freeStoryQuota;
+    notifyListeners();
   }
-
-  Future<void> shareImage(GenerationRecord record) async {
-    await _storageService.shareImage(record.imageBytes, record.id);
+  // TEMP: stub to satisfy HistoryScreen / tiles.
+  // Currently does nothing. We can wire real favorites later.
+  void toggleFavorite(GenerationRecord record) {
+    // If you later add an `isFavorite` field to GenerationRecord,
+    // you can update the record here and save history.
+    notifyListeners();
   }
 }

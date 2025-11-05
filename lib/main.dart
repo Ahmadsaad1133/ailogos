@@ -4,43 +4,41 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models/app_state.dart';
-import 'services/image_generation_service.dart';
+import 'screens/history_screen.dart';
+import 'screens/home_screen.dart';
+import 'screens/result_screen.dart';
+import 'screens/settings_screen.dart';
 import 'services/history_service.dart';
 import 'services/preferences_service.dart';
-import 'services/storage_service.dart';
+import 'services/story_generation_service.dart';
 import 'themes/app_theme.dart';
-import 'screens/home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1) Load .env
+  // Load .env for Groq credentials
   await dotenv.load(fileName: '.env');
-
-  // 2) Read HF key + model id
-  final hfKey = dotenv.env['HUGGINGFACE_API_KEY'] ?? '';
-  final modelId =
-      dotenv.env['HUGGINGFACE_MODEL_ID'] ?? 'stabilityai/stable-diffusion-3.5-large';
 
   final sharedPreferences = await SharedPreferences.getInstance();
 
-  final imageService = ImageGenerationService(
-    apiKey: dotenv.env['HUGGINGFACE_API_KEY'] ?? '',
-    modelId: dotenv.env['HUGGINGFACE_MODEL_ID'] ?? '',
+  final groqKey = dotenv.env['GROQ_API_KEY'] ?? '';
+  final groqModelId = dotenv.env['GROQ_MODEL_ID'] ?? 'llama-3.1-8b-instant';
+
+  final storyService = StoryGenerationService(
+    apiKey: groqKey,
+    modelId: groqModelId,
   );
 
   final historyService = HistoryService(sharedPreferences);
   final preferencesService = PreferencesService(sharedPreferences);
-  const storageService = StorageService();
 
   runApp(
     ChangeNotifierProvider(
       create: (_) => AppState(
-        imageService: imageService,
+        storyService: storyService,
         historyService: historyService,
         preferencesService: preferencesService,
-        storageService: storageService,
-      ),
+      )..initialise(),
       child: const OBSDIVApp(),
     ),
   );
@@ -56,6 +54,38 @@ class OBSDIVApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
       home: const HomeScreen(),
+      onGenerateRoute: (settings) {
+        switch (settings.name) {
+          case HomeScreen.routeName:
+            return MaterialPageRoute(
+              builder: (_) => const HomeScreen(),
+              settings: settings,
+            );
+          case ResultScreen.routeName:
+            return MaterialPageRoute(
+              builder: (_) => const ResultScreen(),
+              settings: settings,
+            );
+          case SettingsScreen.routeName:
+            return MaterialPageRoute(
+              builder: (_) => const SettingsScreen(),
+              settings: settings,
+            );
+          case HistoryScreen.routeName:
+            return MaterialPageRoute(
+              builder: (_) => const HistoryScreen(),
+              settings: settings,
+            );
+        }
+        return MaterialPageRoute(
+          builder: (_) => Scaffold(
+            body: Center(
+              child: Text('No route defined for ${settings.name}'),
+            ),
+          ),
+          settings: settings,
+        );
+      },
     );
   }
 }

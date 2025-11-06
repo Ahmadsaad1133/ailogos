@@ -1,5 +1,5 @@
 import 'dart:convert';
-
+import 'package:cloud_firestore/cloud_firestore.dart';
 /// Represents a single generated story entry in history.
 class StoryRecord {
   final String id;
@@ -75,38 +75,41 @@ class StoryRecord {
       model: json['model'] as String? ?? 'unknown',
       story: json['story'] as String? ?? '',
       createdAt: DateTime.parse(json['createdAt'] as String).toUtc(),
-      updatedAt: parseDate(json['updatedAt']) ?? DateTime.parse(json['createdAt'] as String).toUtc(),
+      updatedAt: parseDate(json['updatedAt']) ??
+          DateTime.parse(json['createdAt'] as String).toUtc(),
       isFavorite: json['isFavorite'] as bool? ?? false,
       genre: json['genre'] as String?,
       lengthLabel: json['lengthLabel'] as String?,
     );
   }
-  Map<String, dynamic> toRemoteJson(String userId) {
+  Map<String, dynamic> toFirestoreJson(String userId) {
     return {
-      'id': id,
-      'user_id': userId,
       'prompt': prompt,
       'model': model,
       'story': story,
-      'created_at': createdAt.toIso8601String(),
-      'updated_at': updatedAt.toIso8601String(),
-      'is_favorite': isFavorite,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'updatedAt': Timestamp.fromDate(updatedAt),
+      'isFavorite': isFavorite,
       'genre': genre,
-      'length_label': lengthLabel,
+      'lengthLabel': lengthLabel,
     };
   }
 
-  factory StoryRecord.fromRemoteJson(Map<String, dynamic> json) {
+  factory StoryRecord.fromFirestore(
+      Map<String, dynamic> json,
+      String id,
+      ) {
     return StoryRecord(
-      id: json['id'] as String,
+      id: id,
       prompt: json['prompt'] as String? ?? '',
       model: json['model'] as String? ?? 'unknown',
       story: json['story'] as String? ?? '',
-      createdAt: parseDate(json['created_at']) ?? DateTime.now().toUtc(),
-      updatedAt: parseDate(json['updated_at']) ?? parseDate(json['created_at']) ?? DateTime.now().toUtc(),
-      isFavorite: json['is_favorite'] as bool? ?? false,
+      createdAt: parseDate(json['createdAt']) ?? DateTime.now().toUtc(),
+      updatedAt: parseDate(json['updatedAt']) ??
+          parseDate(json['createdAt']) ?? DateTime.now().toUtc(),
+      isFavorite: json['isFavorite'] as bool? ?? false,
       genre: json['genre'] as String?,
-      lengthLabel: json['length_label'] as String?,
+      lengthLabel: json['lengthLabel'] as String?,
     );
   }
   static String encodeList(List<StoryRecord> records) {
@@ -120,11 +123,14 @@ class StoryRecord {
     if (data is! List) return const [];
     return data
         .where((e) => e is Map<String, dynamic>)
-        .map<StoryRecord>((e) => StoryRecord.fromJson(e as Map<String, dynamic>))
+        .map<StoryRecord>(
+          (e) => StoryRecord.fromJson(e as Map<String, dynamic>),
+    )
         .toList();
   }
   static DateTime? parseDate(dynamic value) {
     if (value is DateTime) return value.toUtc();
+    if (value is Timestamp) return value.toDate().toUtc();
     if (value is String && value.isNotEmpty) {
       return DateTime.tryParse(value)?.toUtc();
     }

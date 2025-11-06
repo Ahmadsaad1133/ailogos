@@ -1,17 +1,19 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'models/app_state.dart';
 import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/result_screen.dart';
+import 'screens/settings_screen.dart';
 import 'screens/sign_in_screen.dart';
 import 'screens/sign_out_screen.dart';
+import 'screens/sign_up_screen.dart';
 import 'screens/splash_screen.dart';
-import 'screens/settings_screen.dart';
 import 'services/auth_service.dart';
 import 'services/history_service.dart';
 import 'services/preferences_service.dart';
@@ -21,8 +23,8 @@ import 'themes/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
 
-  // Load .env for Groq credentials
   await dotenv.load(fileName: '.env');
 
   final groqKey = dotenv.env['GROQ_API_KEY'] ?? '';
@@ -32,28 +34,12 @@ Future<void> main() async {
   final anthropicKey = dotenv.env['ANTHROPIC_API_KEY'] ?? '';
   final anthropicModel =
       dotenv.env['ANTHROPIC_MODEL_ID'] ?? 'claude-3-5-sonnet-20240620';
-  SupabaseClient? supabaseClient;
-  final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
-  final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
-  if (supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty) {
-    try {
-      await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
-      supabaseClient = Supabase.instance.client;
-    } catch (_) {
-      supabaseClient = null;
-    }
-  }
-  final supabaseRedirect = dotenv.env['SUPABASE_REDIRECT_URI'];
   final sharedPreferences = await SharedPreferences.getInstance();
+  final authService = AuthService();
   final dataStore = UserDataStore(
     preferences: sharedPreferences,
-    client: supabaseClient,
   );
   await dataStore.initialise();
-  final authService = AuthService(
-    client: supabaseClient,
-    redirectUrl: supabaseRedirect,
-  );
   final storyService = StoryGenerationService.fromEnvironment(
     groqApiKey: groqKey,
     groqModel: groqModelId,
@@ -67,15 +53,21 @@ Future<void> main() async {
   final preferencesService = PreferencesService(dataStore);
 
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => AppState(
-        storyService: storyService,
-        historyService: historyService,
-        preferencesService: preferencesService,
-        dataStore: dataStore,
-        authService: authService,
-      )..initialise(),
-      child: const OBSDIVApp(),
+    MultiProvider(
+      providers: [
+        Provider<AuthService>.value(value: authService),
+        Provider<UserDataStore>.value(value: dataStore),
+      ],
+      child: ChangeNotifierProvider(
+        create: (_) => AppState(
+          storyService: storyService,
+          historyService: historyService,
+          preferencesService: preferencesService,
+          dataStore: dataStore,
+          authService: authService,
+        )..initialise(),
+        child: const OBSDIVApp(),
+      ),
     ),
   );
 }
@@ -89,7 +81,7 @@ class OBSDIVApp extends StatelessWidget {
       title: 'Powered by OBSDIV',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
-      home: const SignInScreen(),
+      home: const _RootNavigator(),
       onGenerateRoute: (settings) {
         switch (settings.name) {
           case SplashScreen.routeName:
@@ -127,11 +119,17 @@ class OBSDIVApp extends StatelessWidget {
               builder: (_) => const SignInScreen(),
               settings: settings,
             );
+          case SignUpScreen.routeName:
+            return MaterialPageRoute(
+              builder: (_) => const SignUpScreen(),
+              settings: settings,
+            );
           case SignOutScreen.routeName:
             return MaterialPageRoute(
               builder: (_) => const SignOutScreen(),
               settings: settings,
             );
+
         }
         return MaterialPageRoute(
           builder: (_) => Scaffold(
@@ -141,6 +139,35 @@ class OBSDIVApp extends StatelessWidget {
           ),
           settings: settings,
         );
+      },
+    );
+  }
+}
+class _RootNavigator extends StatelessWidget {
+  const _RootNavigator();
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
+    final authService = context.watch<AuthService>();
+    return StreamBuilder<User?>(
+      stream: authService.authStateChanges(),
+      builder: (context, snapshot) {
+        if (!appState.initialised ||
+            snapshot.connectionState == ConnectionState.waiting) {
+          return const SplashScreen();
+        }
+
+        if (!appState.onboardingComplete) {
+          return const OnboardingScreen();
+        }
+
+        final user = snapshot.data;
+        if (user == null) {
+          return const SignInScreen();
+        }
+
+        return const HomeScreen();
       },
     );
   }

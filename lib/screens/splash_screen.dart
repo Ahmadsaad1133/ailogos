@@ -53,7 +53,7 @@ class _SplashScreenState extends State<SplashScreen>
     final appState = context.read<AppState>();
     final onboardingComplete = appState.onboardingComplete;
     final shouldPromptSignIn =
-        onboardingComplete && appState.authAvailable && !appState.isAuthenticated;
+        onboardingComplete && !appState.isAuthenticated;
     final destination = shouldPromptSignIn
         ? SignInScreen.routeName
         : onboardingComplete

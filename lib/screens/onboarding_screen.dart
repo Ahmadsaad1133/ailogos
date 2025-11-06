@@ -42,8 +42,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final appState = context.read<AppState>();
     await appState.markOnboardingComplete();
     if (!mounted) return;
-    final shouldPromptSignIn =
-        appState.authAvailable && !appState.isAuthenticated;
+    final shouldPromptSignIn = !appState.isAuthenticated;
     final destination =
     shouldPromptSignIn ? SignInScreen.routeName : HomeScreen.routeName;
     Navigator.of(context).pushReplacementNamed(destination);

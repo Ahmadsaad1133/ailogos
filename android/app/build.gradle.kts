@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -13,7 +14,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.ailogos"
-        minSdk = flutter.minSdkVersion
+        minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -44,4 +45,15 @@ android {
 
 flutter {
     source = "../.."
+}
+dependencies {
+    // ✅ Firebase BoM keeps all libs in sync
+    implementation(platform("com.google.firebase:firebase-bom:34.5.0"))
+
+    // ✅ Add the Firebase products you actually use
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
+
+    // (optional) add others like analytics, storage, etc
+    // implementation("com.google.firebase:firebase-analytics")
 }

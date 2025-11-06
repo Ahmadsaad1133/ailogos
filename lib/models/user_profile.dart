@@ -1,5 +1,5 @@
 import 'dart:convert';
-
+import 'package:cloud_firestore/cloud_firestore.dart';
 /// Representation of the user's profile and personalization settings
 /// that can be synchronized to a remote backend.
 class UserProfile {
@@ -8,6 +8,7 @@ class UserProfile {
     this.displayName,
     this.accentHex,
     this.onboardingComplete = false,
+    this.subscriptionPlan = 'free',
     DateTime? updatedAt,
   }) : updatedAt = (updatedAt ?? DateTime.now()).toUtc();
 
@@ -20,6 +21,7 @@ class UserProfile {
   final String? displayName;
   final int? accentHex;
   final bool onboardingComplete;
+  final String subscriptionPlan;
   final DateTime updatedAt;
 
   UserProfile copyWith({
@@ -27,6 +29,7 @@ class UserProfile {
     String? displayName,
     int? accentHex,
     bool? onboardingComplete,
+    String? subscriptionPlan,
     DateTime? updatedAt,
   }) {
     return UserProfile(
@@ -34,6 +37,7 @@ class UserProfile {
       displayName: displayName ?? this.displayName,
       accentHex: accentHex ?? this.accentHex,
       onboardingComplete: onboardingComplete ?? this.onboardingComplete,
+      subscriptionPlan: subscriptionPlan ?? this.subscriptionPlan,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -44,6 +48,7 @@ class UserProfile {
       'displayName': displayName,
       'accentHex': accentHex,
       'onboardingComplete': onboardingComplete,
+      'subscriptionPlan': subscriptionPlan,
       'updatedAt': updatedAt.toIso8601String(),
     };
   }
@@ -54,27 +59,34 @@ class UserProfile {
       displayName: json['displayName'] as String?,
       accentHex: json['accentHex'] as int?,
       onboardingComplete: json['onboardingComplete'] as bool? ?? false,
-      updatedAt: _parseDate(json['updatedAt']) ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      subscriptionPlan: json['subscriptionPlan'] as String? ?? 'free',
+      updatedAt: _parseDate(json['updatedAt']) ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
     );
   }
 
-  Map<String, dynamic> toRemoteJson() {
+  Map<String, dynamic> toFirestoreJson() {
     return {
-      'user_id': userId,
-      'display_name': displayName,
-      'accent_hex': accentHex,
-      'onboarding_complete': onboardingComplete,
-      'updated_at': updatedAt.toIso8601String(),
+      'displayName': displayName,
+      'accentHex': accentHex,
+      'onboardingComplete': onboardingComplete,
+      'subscriptionPlan': subscriptionPlan,
+      'updatedAt': FieldValue.serverTimestamp(),
     };
   }
 
-  factory UserProfile.fromRemoteJson(Map<String, dynamic> json) {
+  factory UserProfile.fromFirestore(
+      Map<String, dynamic> json, {
+        required String userId,
+      }) {
     return UserProfile(
-      userId: json['user_id'] as String? ?? '',
-      displayName: json['display_name'] as String?,
-      accentHex: json['accent_hex'] as int?,
-      onboardingComplete: json['onboarding_complete'] as bool? ?? false,
-      updatedAt: _parseDate(json['updated_at']) ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      userId: userId,
+      displayName: json['displayName'] as String?,
+      accentHex: json['accentHex'] as int?,
+      onboardingComplete: json['onboardingComplete'] as bool? ?? false,
+      subscriptionPlan: json['subscriptionPlan'] as String? ?? 'free',
+      updatedAt: _parseDate(json['updatedAt']) ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
     );
   }
 
@@ -95,6 +107,7 @@ class UserProfile {
 
   static DateTime? _parseDate(dynamic value) {
     if (value is DateTime) return value.toUtc();
+    if (value is Timestamp) return value.toDate().toUtc();
     if (value is String && value.isNotEmpty) {
       return DateTime.tryParse(value)?.toUtc();
     }

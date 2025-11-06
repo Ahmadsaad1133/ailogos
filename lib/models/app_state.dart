@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/history_service.dart';
@@ -16,7 +17,7 @@ class AppState extends ChangeNotifier {
     required HistoryService historyService,
     required PreferencesService preferencesService,
     required UserDataStore dataStore,
-    AuthService? authService,
+    required AuthService authService,
   })  : _storyService = storyService,
         _historyService = historyService,
         _preferencesService = preferencesService,
@@ -27,7 +28,7 @@ class AppState extends ChangeNotifier {
   final HistoryService _historyService;
   final PreferencesService _preferencesService;
   final UserDataStore _dataStore;
-  final AuthService? _authService;
+  final AuthService _authService;
 
   bool _initialised = false;
   bool _isGenerating = false;
@@ -40,12 +41,12 @@ class AppState extends ChangeNotifier {
   StreamSubscription<dynamic>? _activeSubscription;
   StreamSubscription<List<GenerationRecord>>? _historySubscription;
   StreamSubscription<UserProfile>? _profileSubscription;
-  StreamSubscription<AuthUser?>? _authSubscription;
+  StreamSubscription<User?>? _authSubscription;
   static const int _freeStoryQuota = 300;
   bool _isPremium = false;
   int _freeStoriesRemaining = _freeStoryQuota;
   UserProfile _profile = UserProfile(userId: 'local');
-  AuthUser? _authUser;
+  User? _authUser;
   bool get initialised => _initialised;
   bool get isGenerating => _isGenerating;
   String? get errorMessage => _errorMessage;
@@ -57,31 +58,27 @@ class AppState extends ChangeNotifier {
   String? get activeProviderId => _activeProviderId;
   bool get hasStreamingStory => _streamingStory.isNotEmpty && _isGenerating;
   bool get isPremium => _isPremium;
-  int get freeStoriesRemaining => _freeStoriesRemaining.clamp(0, _freeStoryQuota);
+  int get freeStoriesRemaining =>
+      _freeStoriesRemaining.clamp(0, _freeStoryQuota);
   int get freeStoryQuota => _freeStoryQuota;
-  bool get authAvailable => _authService?.isAvailable ?? false;
   bool get isAuthenticated => _authUser != null;
-  AuthUser? get authUser => _authUser;
+  User? get authUser => _authUser;
 
   set errorMessage(String? value) {
     _errorMessage = value;
     notifyListeners();
   }
   Future<void> _prepareUserSession({bool initial = false}) async {
-    if (_authService == null || !_authService!.isAvailable) {
-      await _dataStore.useLocalUser();
-      _authUser = null;
-      return;
-    }
-    final user = _authService!.currentUser;
+    final user = _authService.currentUser;
     _authUser = user;
     if (user != null) {
-      await _dataStore.useUser(user.id);
+      await _dataStore.useUser(user.uid);
     } else {
       await _dataStore.useLocalUser();
     }
     if (initial && user != null && _displayName == null) {
-      _displayName = user.displayName ?? user.email?.split('@').first;
+      _displayName =
+          user.displayName ?? user.email?.split('@').first ?? _displayName;
     }
   }
   Future<void> initialise() async {
@@ -106,7 +103,7 @@ class AppState extends ChangeNotifier {
     _profileSubscription = _preferencesService.profileStream.listen((profile) {
       _applyProfile(profile);
     });
-    _authSubscription = _authService?.onAuthStateChanged.listen((user) {
+    _authSubscription = _authService.authStateChanges().listen((user) {
       unawaited(_handleAuthUserChanged(user));
     });
     // NOTE: For now, premium & free story budget are in-memory only.
@@ -271,48 +268,10 @@ class AppState extends ChangeNotifier {
     unawaited(_historyService.addRecord(updated));
   }
 
-  Future<void> signInWithEmail(String email, String password) async {
-    final service = _authService;
-    if (service == null || !service.isAvailable) {
-      throw const AuthFlowException('Cloud sync is not configured.');
-    }
-    await service.signInWithEmail(email, password);
-  }
-
-  Future<void> signInWithGoogle() async {
-    final service = _authService;
-    if (service == null || !service.isAvailable) {
-      throw const AuthFlowException('Cloud sync is not configured.');
-    }
-    await service.signInWithGoogle();
-  }
-
-  Future<void> signInWithApple() async {
-    final service = _authService;
-    if (service == null || !service.isAvailable) {
-      throw const AuthFlowException('Cloud sync is not configured.');
-    }
-    await service.signInWithApple();
-  }
-
-  Future<void> signOut() async {
-    final service = _authService;
-    if (service == null || !service.isAvailable) {
-      _authUser = null;
-      await _dataStore.useLocalUser();
-      await _reloadUserState();
-      return;
-    }
-    await service.signOut();
-    _authUser = null;
-    await _dataStore.useLocalUser();
-    await _reloadUserState();
-  }
-
-  Future<void> _handleAuthUserChanged(AuthUser? user) async {
+  Future<void> _handleAuthUserChanged(User? user) async {
     _authUser = user;
     if (user != null) {
-      await _dataStore.useUser(user.id);
+      await _dataStore.useUser(user.uid);
     } else {
       await _dataStore.useLocalUser();
     }
@@ -348,7 +307,6 @@ class AppState extends ChangeNotifier {
     _historySubscription?.cancel();
     _profileSubscription?.cancel();
     _authSubscription?.cancel();
-    unawaited(_authService?.dispose());
     super.dispose();
   }
 }

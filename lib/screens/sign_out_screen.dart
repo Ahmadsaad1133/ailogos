@@ -1,7 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/app_state.dart';
+import '../services/auth_service.dart';
 import '../widgets/branded_logo.dart';
 import '../widgets/gradient_background.dart';
 import 'home_screen.dart';
@@ -23,7 +25,7 @@ class _SignOutScreenState extends State<SignOutScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final theme = Theme.of(context);
-
+    final user = appState.authUser;
     return GradientBackground(
       asset: 'lib/assets/backgrounds/obsdiv_settings.svg',
       child: Scaffold(
@@ -35,7 +37,7 @@ class _SignOutScreenState extends State<SignOutScreen> {
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-            child: _buildContent(context, appState, theme),
+            child: _buildContent(context, theme, user, appState),
           ),
         ),
       ),
@@ -43,28 +45,17 @@ class _SignOutScreenState extends State<SignOutScreen> {
   }
 
   Widget _buildContent(
-      BuildContext context, AppState appState, ThemeData theme) {
-    if (!appState.authAvailable) {
+      BuildContext context,
+      ThemeData theme,
+      User? user,
+      AppState appState,
+      ) {
+    if (user == null) {
       return _InfoMessage(
-        icon: Icons.cloud_off_rounded,
-        title: 'Cloud sync is disabled',
-        message:
-        'Stories are stored locally only. Reconfigure Supabase to enable sign in.',
-        primaryAction: FilledButton.icon(
-          onPressed: () => Navigator.of(context)
-              .pushReplacementNamed(HomeScreen.routeName),
-          icon: const Icon(Icons.arrow_back_rounded),
-          label: const Text('Back'),
-        ),
-      );
-    }
-
-    if (!appState.isAuthenticated) {
-      return _InfoMessage(
-        icon: Icons.verified_user_outlined,
+        icon: Icons.logout_rounded,
         title: 'You are already signed out',
         message:
-        'Sign in again to sync your neon history and preferences across devices.',
+        'Sign in again to keep your neon history and preferences in sync across devices.',
         primaryAction: FilledButton.icon(
           onPressed: () => Navigator.of(context)
               .pushReplacementNamed(SignInScreen.routeName),
@@ -72,29 +63,27 @@ class _SignOutScreenState extends State<SignOutScreen> {
           label: const Text('Go to sign in'),
         ),
         secondaryAction: TextButton(
-          onPressed: () => Navigator.of(context)
-              .pushReplacementNamed(HomeScreen.routeName),
-          child: const Text('Skip for now'),
+          onPressed: () =>
+              Navigator.of(context).pushReplacementNamed(HomeScreen.routeName),
+          child: const Text('Return home'),
         ),
       );
     }
 
-    final user = appState.authUser;
-    final email = user?.email ?? 'Signed in';
-    final displayName = user?.displayName ?? appState.displayName;
-
+    final email = user.email ?? 'Signed in';
+    final name = user.displayName ?? appState.displayName;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         const SizedBox(height: 12),
         const BrandedLogo(size: 120, variant: LogoVariant.watermark),
         const SizedBox(height: 16),
-        Text('Sign out of cloud sync',
+        Text('Sign out of your account',
             style: theme.textTheme.headlineSmall,
             textAlign: TextAlign.center),
         const SizedBox(height: 12),
         Text(
-          'You are currently signed in as $displayName\n$email',
+          'You are currently signed in as $name\n$email',
           style: theme.textTheme.bodyMedium,
           textAlign: TextAlign.center,
         ),
@@ -104,7 +93,8 @@ class _SignOutScreenState extends State<SignOutScreen> {
           decoration: BoxDecoration(
             color: theme.colorScheme.surface.withOpacity(0.9),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: theme.colorScheme.outline.withOpacity(0.2)),
+            border:
+            Border.all(color: theme.colorScheme.outline.withOpacity(0.2)),
           ),
           child: Column(
             children: [
@@ -115,7 +105,7 @@ class _SignOutScreenState extends State<SignOutScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Stories, favorites, and profile settings are syncing with Supabase.',
+                      'Your stories, favorites, and profile settings are linked to this account.',
                       style: theme.textTheme.bodyMedium,
                     ),
                   ),
@@ -123,7 +113,7 @@ class _SignOutScreenState extends State<SignOutScreen> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Signing out keeps your data locally but stops new cloud sync updates until you sign in again.',
+                'Signing out keeps your data safe. You can sign in again anytime to continue where you left off.',
                 style: theme.textTheme.bodySmall,
               ),
             ],
@@ -131,8 +121,7 @@ class _SignOutScreenState extends State<SignOutScreen> {
         ),
         const Spacer(),
         FilledButton.icon(
-          onPressed:
-          _isProcessing ? null : () => _confirmSignOut(context, appState),
+          onPressed: _isProcessing ? null : () => _confirmSignOut(context),
           icon: _isProcessing
               ? const SizedBox(
             width: 20,
@@ -144,30 +133,29 @@ class _SignOutScreenState extends State<SignOutScreen> {
         ),
         const SizedBox(height: 12),
         TextButton(
-          onPressed: () => Navigator.of(context)
-              .pushReplacementNamed(HomeScreen.routeName),
+          onPressed: () =>
+              Navigator.of(context).pushReplacementNamed(HomeScreen.routeName),
           child: const Text('Stay signed in'),
         ),
       ],
     );
   }
 
-  Future<void> _confirmSignOut(
-      BuildContext context, AppState appState) async {
+  Future<void> _confirmSignOut(BuildContext context) async {
     setState(() => _isProcessing = true);
     try {
-      await appState.signOut();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Signed out of cloud sync.')),
-        );
-        Navigator.of(context)
-            .pushReplacementNamed(SignInScreen.routeName);
-      }
+      final authService = context.read<AuthService>();
+      await authService.signOut();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Signed out successfully.')),
+      );
+      Navigator.of(context)
+          .pushReplacementNamed(SignInScreen.routeName);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
+          SnackBar(content: Text('Failed to sign out: $error')),
         );
       }
     } finally {
@@ -198,32 +186,32 @@ class _InfoMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const BrandedLogo(size: 120, variant: LogoVariant.icon),
-        const SizedBox(height: 24),
-        Icon(icon, size: 48, color: theme.colorScheme.primary),
-        const SizedBox(height: 16),
-        Text(title,
-            style: theme.textTheme.headlineSmall,
-            textAlign: TextAlign.center),
-        const SizedBox(height: 12),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text(
-            message,
-            style: theme.textTheme.bodyMedium,
-            textAlign: TextAlign.center,
-          ),
-        ),
-        const SizedBox(height: 32),
-        primaryAction,
-        if (secondaryAction != null) ...[
+    return Container(
+        decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+    color: theme.colorScheme.surface.withOpacity(0.9),
+    border: Border.all(color: theme.colorScheme.outline.withOpacity(0.2)),
+    ),
+    padding: const EdgeInsets.all(16),
+    child: Column(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+    Icon(icon, size: 48, color: theme.colorScheme.primary),
+    const SizedBox(height: 16),
+    Text(title, style: theme.textTheme.titleMedium,
+    textAlign: TextAlign.center),
           const SizedBox(height: 12),
-          secondaryAction!,
+    Text(message,
+    style: theme.textTheme.bodyMedium,
+    textAlign: TextAlign.center),
+    const SizedBox(height: 20),
+    primaryAction,
+    if (secondaryAction != null) ...[
+    const SizedBox(height: 12),
+    secondaryAction!,
+    ],
         ],
-      ],
+    ),
     );
   }
 }

@@ -1,141 +1,92 @@
-import 'dart:async';
-
-import 'package:supabase_flutter/supabase_flutter.dart';
-
-/// Simple abstraction around Supabase authentication that exposes a unified
-/// stream of the current user and helper methods for multiple sign-in flows.
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+/// Service wrapper that centralises Firebase Authentication access for the app.
 class AuthService {
   AuthService({
-    SupabaseClient? client,
-    String? redirectUrl,
-  })  : _client = client,
-        _redirectUrl = redirectUrl,
-        _controller = StreamController<AuthUser?>.broadcast() {
-    _authSubscription = _client?.auth.onAuthStateChange.listen((data) {
-      final session = data.session;
-      _controller.add(_mapUser(session?.user));
-    });
-    final current = _client?.auth.currentUser;
-    if (current != null) {
-      _controller.add(_mapUser(current));
-    }
-  }
+    FirebaseAuth? firebaseAuth,
+    FirebaseFirestore? firestore,
+  })  : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
+        _firestore = firestore ?? FirebaseFirestore.instance;
 
-  final SupabaseClient? _client;
-  final String? _redirectUrl;
-  final StreamController<AuthUser?> _controller;
-  StreamSubscription<AuthState>? _authSubscription;
+  final FirebaseAuth _firebaseAuth;
+  final FirebaseFirestore _firestore;
 
-  bool get isAvailable => _client != null;
+  /// Emits authentication changes as the user signs in or out.
+  Stream<User?> authStateChanges() => _firebaseAuth.authStateChanges();
 
-  AuthUser? get currentUser => _mapUser(_client?.auth.currentUser);
+  /// Returns the currently authenticated Firebase user, if any.
+  User? get currentUser => _firebaseAuth.currentUser;
 
-  Stream<AuthUser?> get onAuthStateChanged => _controller.stream;
-
-  Future<void> signInWithEmail(String email, String password) async {
-    final client = _requireClient();
-    final normalizedEmail = email.trim();
-    if (normalizedEmail.isEmpty || password.isEmpty) {
-      throw const AuthFlowException('Email and password are required.');
-    }
-    try {
-      await client.auth.signInWithPassword(
-        email: normalizedEmail,
-        password: password,
-      );
-    } on AuthException catch (error) {
-      if (error.message.toLowerCase().contains('invalid login credentials')) {
-        final response = await client.auth.signUp(
-          email: normalizedEmail,
-          password: password,
-        );
-        if (response.session == null) {
-          throw const AuthFlowException(
-            'Check your inbox to confirm the login link before signing in.',
-          );
-        }
-      } else {
-        throw AuthFlowException(error.message);
-      }
-    } catch (error) {
-      throw AuthFlowException(error.toString());
-    }
-  }
-
-  Future<void> signInWithGoogle() async {
-    final client = _requireClient();
-    try {
-      await client.auth.signInWithOAuth(
-        OAuthProvider.google,
-        redirectTo: _redirectUrl,
-        queryParams: const {'prompt': 'select_account'},
-      );
-    } on AuthException catch (error) {
-      throw AuthFlowException(error.message);
-    } catch (error) {
-      throw AuthFlowException(error.toString());
-    }
-  }
-
-  Future<void> signInWithApple() async {
-    final client = _requireClient();
-    try {
-      await client.auth.signInWithOAuth(
-        OAuthProvider.apple,
-        redirectTo: _redirectUrl,
-      );
-    } on AuthException catch (error) {
-      throw AuthFlowException(error.message);
-    } catch (error) {
-      throw AuthFlowException(error.toString());
-    }
-  }
-
-  Future<void> signOut() async {
-    final client = _requireClient();
-    await client.auth.signOut();
-  }
-
-  SupabaseClient _requireClient() {
-    final client = _client;
-    if (client == null) {
-      throw const AuthFlowException('Authentication is not configured.');
-    }
-    return client;
-  }
-
-  AuthUser? _mapUser(User? user) {
-    if (user == null) return null;
-    return AuthUser(
-      id: user.id,
-      email: user.email,
-      displayName: user.userMetadata?['full_name'] as String?,
+  /// Signs in an existing user using an email and password.
+  Future<UserCredential> signInWithEmailAndPassword(
+      String email,
+      String password,
+      ) {
+    return _firebaseAuth.signInWithEmailAndPassword(
+      email: email.trim(),
+      password: password,
     );
   }
 
-  Future<void> dispose() async {
-    await _authSubscription?.cancel();
-    await _controller.close();
+  /// Registers a new user with Firebase Authentication.
+  ///
+  /// If [displayName] is provided, the user's Firebase profile and Firestore
+  /// document are updated accordingly.
+  Future<UserCredential> signUpWithEmailAndPassword(
+      String email,
+      String password, {
+        String? displayName,
+      }) async {
+    final credential = await _firebaseAuth.createUserWithEmailAndPassword(
+      email: email.trim(),
+      password: password,
+    );
+    final user = credential.user;
+    if (user != null) {
+      if (displayName != null && displayName.isNotEmpty) {
+        await user.updateDisplayName(displayName.trim());
+      }
+      await _createOrUpdateUserDocument(
+        user: user,
+        displayName: displayName,
+      );
+    }
+    return credential;
   }
-}
 
-class AuthUser {
-  const AuthUser({
-    required this.id,
-    this.email,
-    this.displayName,
-  });
+  /// Sends a password reset email to the provided address.
+  Future<void> sendPasswordResetEmail(String email) {
+    return _firebaseAuth.sendPasswordResetEmail(email: email.trim());
+  }
 
-  final String id;
-  final String? email;
-  final String? displayName;
-}
+  /// Signs the current user out of Firebase Authentication.
+  Future<void> signOut() {
+    return _firebaseAuth.signOut();
+  }
 
-class AuthFlowException implements Exception {
-  const AuthFlowException(this.message);
+  Future<void> _createOrUpdateUserDocument({
+    required User user,
+    String? displayName,
+  }) async {
+    final doc = _firestore.collection('users').doc(user.uid);
+    final payload = <String, dynamic>{
+      'uid': user.uid,
+      'email': user.email,
+      'displayName':
+      displayName?.trim().isNotEmpty == true ? displayName!.trim() : user.displayName,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'subscriptionPlan': 'free',
+    };
 
-  final String message;
-
-  @override
-  String toString() => message;
+    final snapshot = await doc.get();
+    if (snapshot.exists) {
+      await doc.update({
+        ...payload,
+        'createdAt': snapshot.data()?['createdAt'] ?? FieldValue.serverTimestamp(),
+      });
+    } else {
+      await doc.set(payload);
+    }
+  }
 }

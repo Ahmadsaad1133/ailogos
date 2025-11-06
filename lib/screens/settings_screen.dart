@@ -114,13 +114,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
   Widget _buildAccountSection(AppState appState, ThemeData theme) {
-    if (!appState.authAvailable) {
-      return _InfoCard(
-        icon: Icons.cloud_off_rounded,
-        message:
-        'Cloud sync is disabled because no Supabase project is configured. Stories stay on this device only.',
-      );
-    }
 
     if (appState.isAuthenticated) {
       final user = appState.authUser;
@@ -131,19 +124,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
         trailing: FilledButton.icon(
           onPressed: () =>
               Navigator.of(context).pushNamed(SignOutScreen.routeName),
-          icon: const Icon(Icons.manage_accounts_rounded),
-          label: const Text('Manage'),
+          icon: const Icon(Icons.logout_rounded),
+          label: const Text('Sign out'),
         ),
         title: name,
-        message: '$email\nStories & favorites sync automatically.',
+        message: '$email\nYour stories and settings stay synced securely.',
       );
     }
 
     return _InfoCard(
-      icon: Icons.cloud_sync_rounded,
-      title: 'Enable cloud sync',
+      icon: Icons.person_add_alt_1_rounded,
+      title: 'Sign in to sync',
       message:
-      'Sign in with email, Google, or Apple to sync stories across devices.',
+      'Use your email and password to back up history, favorites, and preferences.',
       trailing: FilledButton.icon(
         onPressed: () =>
             Navigator.of(context).pushNamed(SignInScreen.routeName),

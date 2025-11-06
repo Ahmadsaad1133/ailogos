@@ -3,9 +3,10 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  app_links
   audioplayers_windows
-  connectivity_plus
+  cloud_firestore
+  firebase_auth
+  firebase_core
   flutter_tts
   permission_handler_windows
   share_plus

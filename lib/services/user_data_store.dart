@@ -1,51 +1,50 @@
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/story_record.dart';
 import '../models/user_profile.dart';
 
-/// Centralized data store that keeps history and profile state in sync with a
-/// remote backend (Supabase/Firestore/Appwrite) while retaining an offline
-/// cache and queued writes for eventual consistency.
+/// Centralised data store that keeps history and profile state in sync with
+/// Cloud Firestore while maintaining a lightweight offline cache using
+/// [SharedPreferences].
 class UserDataStore {
   UserDataStore({
     required SharedPreferences preferences,
-    SupabaseClient? client,
-    Connectivity? connectivity,
+    FirebaseFirestore? firestore,
   })  : _preferences = preferences,
-        _client = client,
-        _connectivity = connectivity ?? Connectivity();
+        _firestore = firestore ?? FirebaseFirestore.instance;
 
-  static const _schemaVersion = 1;
+  static const _schemaVersion = 2;
   static const _schemaKey = 'sync.schema_version';
   static const _historyCacheKey = 'sync.cache.history.v1';
   static const _profileCacheKey = 'sync.cache.profile.v1';
-  static const _pendingHistoryKey = 'sync.queue.history.v1';
-  static const _pendingProfileKey = 'sync.queue.profile.v1';
   static const _activeUserIdKey = 'sync.user_id.active';
   static const _localUserIdKey = 'sync.user_id.local';
 
-  final SupabaseClient? _client;
+  final FirebaseFirestore _firestore;
   final SharedPreferences _preferences;
-  final Connectivity _connectivity;
-  late String _userId;
-  String? _localUserId;
-  List<StoryRecord> _history = [];
-  UserProfile? _profile;
-  bool _initialised = false;
-  bool _isOnline = true;
-  StreamSubscription<dynamic>? _connectivitySubscription;
-
-  final _historyController = StreamController<List<StoryRecord>>.broadcast();
+  final _historyController =
+  StreamController<List<StoryRecord>>.broadcast();
   final _profileController = StreamController<UserProfile>.broadcast();
 
-  final List<_PendingHistoryAction> _pendingHistoryQueue = [];
-  final List<_PendingProfileUpdate> _pendingProfileQueue = [];
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  _historySubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+  _profileSubscription;
+  late String _userId;
+  String? _localUserId;
+  bool _initialised = false;
+  List<StoryRecord> _history = [];
+  UserProfile _profile = UserProfile.anonymous('local');
+
+  bool get initialised => _initialised;
+
+  Stream<List<StoryRecord>> get historyStream => _historyController.stream;
+
+  Stream<UserProfile> get profileStream => _profileController.stream;
 
   Future<void> initialise() async {
     if (_initialised) return;
@@ -53,48 +52,29 @@ class UserDataStore {
     await _ensureSchema();
     await _loadStateForUser(_userId);
 
-    await _refreshConnectivityStatus();
-    _connectivitySubscription =
-        _connectivity.onConnectivityChanged.listen(_handleConnectivityChange);
-
-    await _pullRemoteState();
-    await _flushPendingQueues();
 
     _initialised = true;
   }
 
-  Stream<List<StoryRecord>> get historyStream => _historyController.stream;
-
-  Stream<UserProfile> get profileStream => _profileController.stream;
 
   String get userId => _userId;
-  String? get localUserId => _localUserId;
 
   Future<void> useUser(String userId, {bool persist = true}) async {
-    if (!_initialised) {
-      await initialise();
-    }
-    if (userId.isEmpty) return;
     if (_userId == userId) return;
+    await _detachRemoteListeners();
     _userId = userId;
     if (persist) {
       await _preferences.setString(_activeUserIdKey, userId);
     }
     await _loadStateForUser(userId);
-    await _pullRemoteState();
-    await _flushPendingQueues();
   }
 
   Future<void> useLocalUser() async {
-    if (!_initialised) {
-      await initialise();
-      return;
-    }
-    final localId = _localUserId ?? _preferences.getString(_localUserIdKey);
-    if (localId == null || localId.isEmpty) {
-      return;
-    }
-    await useUser(localId);
+    final localId = _localUserId ??
+        _preferences.getString(_localUserIdKey) ??
+        const Uuid().v4();
+    _localUserId = localId;
+    await useUser(localId, persist: true);
   }
   Future<List<StoryRecord>> fetchHistory() async {
     if (!_initialised) {
@@ -107,26 +87,22 @@ class UserDataStore {
     if (!_initialised) {
       await initialise();
     }
-    return _profile!;
+    return _profile;
   }
 
   Future<void> upsertHistoryRecord(StoryRecord record) async {
-    final now = DateTime.now().toUtc();
-    final normalized = record.copyWith(updatedAt: now);
-
-    final existingIndex = _history.indexWhere((element) => element.id == normalized.id);
-    if (existingIndex >= 0) {
-      _history[existingIndex] = normalized;
+    final normalized = record.copyWith(updatedAt: DateTime.now().toUtc());
+    final index = _history.indexWhere((element) => element.id == normalized.id);
+    if (index >= 0) {
+      _history[index] = normalized;
     } else {
-      _history.add(normalized);
+      _history.insert(0, normalized);
     }
-    _history.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     await _cacheHistory();
     _historyController.add(List.unmodifiable(_history));
-
-    _pendingHistoryQueue.add(_PendingHistoryAction.upsert(normalized));
-    await _savePendingHistoryQueue();
-    await _flushPendingHistoryQueue();
+    if (_isRemoteUser) {
+      await _writeHistoryRecord(normalized);
+    }
   }
 
   Future<void> clearHistory() async {
@@ -134,11 +110,9 @@ class UserDataStore {
     await _cacheHistory();
     _historyController.add(const <StoryRecord>[]);
 
-    _pendingHistoryQueue
-      ..clear()
-      ..add(_PendingHistoryAction.clear());
-    await _savePendingHistoryQueue();
-    await _flushPendingHistoryQueue();
+    if (_isRemoteUser) {
+      await _clearRemoteHistory();
+    }
   }
 
   Future<void> updateProfile({
@@ -146,25 +120,23 @@ class UserDataStore {
     int? accentHex,
     bool? onboardingComplete,
   }) async {
-    final now = DateTime.now().toUtc();
-    final nextProfile = _profile!.copyWith(
-      displayName: displayName,
-      accentHex: accentHex,
-      onboardingComplete: onboardingComplete,
-      updatedAt: now,
+    final nextProfile = _profile.copyWith(
+      displayName: displayName ?? _profile.displayName,
+      accentHex: accentHex ?? _profile.accentHex,
+      onboardingComplete: onboardingComplete ?? _profile.onboardingComplete,
+      updatedAt: DateTime.now().toUtc(),
     );
     _profile = nextProfile;
     await _cacheProfile();
     _profileController.add(nextProfile);
 
-    final payload = nextProfile.toRemoteJson();
-    _pendingProfileQueue.add(_PendingProfileUpdate(payload: payload));
-    await _savePendingProfileQueue();
-    await _flushPendingProfileQueue();
+    if (_isRemoteUser) {
+      await _writeProfile(nextProfile);
+    }
   }
 
   Future<void> dispose() async {
-    await _connectivitySubscription?.cancel();
+    await _detachRemoteListeners();
     await _historyController.close();
     await _profileController.close();
   }
@@ -198,8 +170,6 @@ class UserDataStore {
     for (final key in keys) {
       if (key.startsWith(_historyCacheKey) ||
           key.startsWith(_profileCacheKey) ||
-          key.startsWith(_pendingHistoryKey) ||
-          key.startsWith(_pendingProfileKey) ||
           key == _activeUserIdKey ||
           key == _localUserIdKey) {
         await _preferences.remove(key);
@@ -212,15 +182,14 @@ class UserDataStore {
   Future<void> _loadStateForUser(String userId) async {
     _history = _loadHistoryCache(userId);
     _profile = _loadProfileCache(userId);
-    _pendingHistoryQueue
-      ..clear()
-      ..addAll(_loadPendingHistoryQueue(userId));
-    _pendingProfileQueue
-      ..clear()
-      ..addAll(_loadPendingProfileQueue(userId));
 
     _historyController.add(List.unmodifiable(_history));
-    _profileController.add(_profile!);
+    _profileController.add(_profile);
+
+    if (_isRemoteUser) {
+      await _attachRemoteListeners();
+      await _pullRemoteState();
+    }
   }
 
   List<StoryRecord> _loadHistoryCache(String userId) {
@@ -244,7 +213,7 @@ class UserDataStore {
     }
     try {
       final profile = UserProfile.decode(raw);
-      if (profile.userId.isEmpty || profile.userId != userId) {
+      if (profile.userId != userId) {
         return profile.copyWith(userId: userId);
       }
       return profile;
@@ -253,328 +222,115 @@ class UserDataStore {
     }
   }
 
-  List<_PendingHistoryAction> _loadPendingHistoryQueue(String userId) {
-    final raw =
-    _preferences.getString(_keyForUser(_pendingHistoryKey, userId));
-    if (raw == null || raw.isEmpty) {
-      return const [];
-    }
-    try {
-      final dynamic decoded = jsonDecode(raw);
-      if (decoded is! List) return const [];
-      return decoded
-          .whereType<Map<String, dynamic>>()
-          .map(_PendingHistoryAction.fromJson)
-          .toList();
-    } catch (_) {
-      return const [];
-    }
-  }
-
-  List<_PendingProfileUpdate> _loadPendingProfileQueue(String userId) {
-    final raw =
-    _preferences.getString(_keyForUser(_pendingProfileKey, userId));
-    if (raw == null || raw.isEmpty) {
-      return const [];
-    }
-    try {
-      final dynamic decoded = jsonDecode(raw);
-      if (decoded is! List) return const [];
-      return decoded
-          .whereType<Map<String, dynamic>>()
-          .map(_PendingProfileUpdate.fromJson)
-          .toList();
-    } catch (_) {
-      return const [];
-    }
-  }
-
   Future<void> _cacheHistory() async {
     final key = _keyForUser(_historyCacheKey, _userId);
     if (_history.isEmpty) {
       await _preferences.remove(key);
     } else {
-      await _preferences.setString(
-        key,
-        StoryRecord.encodeList(_history),
-      );
+      await _preferences.setString(key, StoryRecord.encodeList(_history));
     }
   }
 
   Future<void> _cacheProfile() async {
     final key = _keyForUser(_profileCacheKey, _userId);
-    await _preferences.setString(
-      key,
-      UserProfile.encode(_profile!),
-    );
+    await _preferences.setString(key, UserProfile.encode(_profile));
   }
 
-  Future<void> _savePendingHistoryQueue() async {
-    final key = _keyForUser(_pendingHistoryKey, _userId);
-    if (_pendingHistoryQueue.isEmpty) {
-      await _preferences.remove(key);
-      return;
-    }
-    final payload = jsonEncode(
-      _pendingHistoryQueue.map((e) => e.toJson()).toList(),
-    );
-    await _preferences.setString(key, payload);
+  bool get _isRemoteUser =>
+      _localUserId != null && _userId.isNotEmpty && _userId != _localUserId;
+
+  Future<void> _attachRemoteListeners() async {
+    await _detachRemoteListeners();
+    final historyQuery = _firestore
+        .collection('users')
+        .doc(_userId)
+        .collection('history')
+        .orderBy('createdAt', descending: true);
+    _historySubscription = historyQuery.snapshots().listen((snapshot) {
+      final records = snapshot.docs
+          .map((doc) => StoryRecord.fromFirestore(doc.data(), doc.id))
+          .toList();
+      _history = records;
+      _historyController.add(List.unmodifiable(_history));
+      unawaited(_cacheHistory());
+    });
+
+    final profileDoc = _firestore.collection('users').doc(_userId);
+    _profileSubscription = profileDoc.snapshots().listen((snapshot) {
+      if (!snapshot.exists) {
+        return;
+      }
+      final data = snapshot.data();
+      if (data == null) return;
+      _profile = UserProfile.fromFirestore(data, userId: _userId);
+      _profileController.add(_profile);
+      unawaited(_cacheProfile());
+    });
   }
 
-  Future<void> _savePendingProfileQueue() async {
-
-    final key = _keyForUser(_pendingHistoryKey, _userId);
-    if (_pendingProfileQueue.isEmpty) {
-      await _preferences.remove(key);
-      return;
-    }
-    final payload = jsonEncode(
-      _pendingProfileQueue.map((e) => e.toJson()).toList(),
-    );
-    await _preferences.setString(key, payload);
-  }
-
-  Future<void> _refreshConnectivityStatus() async {
-    try {
-      final result = await _connectivity.checkConnectivity();
-      _isOnline = _isOnlineFromResult(result);
-    } catch (_) {
-      _isOnline = true;
-    }
-  }
-
-  Future<void> _handleConnectivityChange(dynamic result) async {
-    final nextOnline = _isOnlineFromResult(result);
-    if (nextOnline && !_isOnline) {
-      _isOnline = true;
-      await _pullRemoteState();
-      await _flushPendingQueues();
-    } else if (!nextOnline) {
-      _isOnline = false;
-    }
-  }
-
-  bool _isOnlineFromResult(dynamic result) {
-    if (result is ConnectivityResult) {
-      return result != ConnectivityResult.none;
-    }
-    if (result is Iterable<ConnectivityResult>) {
-      return result.any((element) => element != ConnectivityResult.none);
-    }
-    return true;
+  Future<void> _detachRemoteListeners() async {
+    await _historySubscription?.cancel();
+    await _profileSubscription?.cancel();
+    _historySubscription = null;
+    _profileSubscription = null;
   }
 
   Future<void> _pullRemoteState() async {
-    if (_client == null) {
-      return;
-    }
-    await _pullRemoteHistory();
-    await _pullRemoteProfile();
-  }
-
-  Future<void> _pullRemoteHistory() async {
-    if (_client == null) return;
-    try {
-      final response = await _client!
-          .from('history')
-          .select()
-          .eq('user_id', _userId)
-          .order('updated_at', ascending: false);
-      final remoteRecords = (response as List<dynamic>)
-          .whereType<Map<String, dynamic>>()
-          .map(StoryRecord.fromRemoteJson)
-          .toList();
-      _mergeHistory(remoteRecords);
-    } catch (_) {
-      // Ignore remote fetch failures; cached data will continue to be used.
-    }
-  }
-
-  Future<void> _pullRemoteProfile() async {
-    if (_client == null) return;
-    try {
-      final response = await _client!
-          .from('profiles')
-          .select()
-          .eq('user_id', _userId)
-          .maybeSingle();
-      if (response == null || response is! Map<String, dynamic>) {
-        return;
-      }
-      final remoteProfile = UserProfile.fromRemoteJson(response as Map<String, dynamic>);
-      if (remoteProfile.updatedAt.isAfter(_profile!.updatedAt)) {
-        _profile = remoteProfile;
+    final userDoc = await _firestore.collection('users').doc(_userId).get();
+    if (userDoc.exists) {
+      final data = userDoc.data();
+      if (data != null) {
+        _profile = UserProfile.fromFirestore(data, userId: _userId);
         await _cacheProfile();
-        _profileController.add(remoteProfile);
-      }
-    } catch (_) {
-      // Ignore remote fetch failures.
-    }
-  }
-
-  void _mergeHistory(List<StoryRecord> remoteRecords) {
-    final Map<String, StoryRecord> merged = {
-      for (final record in _history) record.id: record,
-    };
-    for (final remote in remoteRecords) {
-      final existing = merged[remote.id];
-      if (existing == null || remote.updatedAt.isAfter(existing.updatedAt)) {
-        merged[remote.id] = remote;
+        _profileController.add(_profile);
       }
     }
 
-    final remoteIds = remoteRecords.map((e) => e.id).toSet();
-    final pendingIds = _pendingHistoryQueue
-        .where((action) => action.type == _HistoryActionType.upsert && action.record != null)
-        .map((action) => action.record!.id)
-        .toSet();
 
-    merged.removeWhere((key, value) => !remoteIds.contains(key) && !pendingIds.contains(key));
-
-    _history = merged.values.toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final historySnapshot = await _firestore
+        .collection('users')
+        .doc(_userId)
+        .collection('history')
+        .orderBy('createdAt', descending: true)
+        .get();
+    final records = historySnapshot.docs
+        .map((doc) => StoryRecord.fromFirestore(doc.data(), doc.id))
+        .toList();
+    _history = records;
+    await _cacheHistory();
     _historyController.add(List.unmodifiable(_history));
-    unawaited(_cacheHistory());
   }
 
-  Future<void> _flushPendingQueues() async {
-    await _flushPendingHistoryQueue();
-    await _flushPendingProfileQueue();
+  Future<void> _writeHistoryRecord(StoryRecord record) async {
+    final historyDoc = _firestore
+        .collection('users')
+        .doc(_userId)
+        .collection('history')
+        .doc(record.id);
+    await historyDoc.set(
+      record.toFirestoreJson(_userId),
+      SetOptions(merge: true),
+    );
   }
 
-  Future<void> _flushPendingHistoryQueue() async {
-    if (_client == null || !_isOnline || _pendingHistoryQueue.isEmpty) {
-      return;
+  Future<void> _clearRemoteHistory() async {
+    final historyCollection = _firestore
+        .collection('users')
+        .doc(_userId)
+        .collection('history');
+    final snapshot = await historyCollection.get();
+    final batch = _firestore.batch();
+    for (final doc in snapshot.docs) {
+      batch.delete(doc.reference);
     }
-    var didChange = false;
-    while (_pendingHistoryQueue.isNotEmpty) {
-      final action = _pendingHistoryQueue.first;
-      final success = await _performHistoryAction(action);
-      if (!success) {
-        break;
-      }
-      _pendingHistoryQueue.removeAt(0);
-      didChange = true;
-    }
-    if (didChange) {
-      await _savePendingHistoryQueue();
-    }
+    await batch.commit();
   }
 
-  Future<void> _flushPendingProfileQueue() async {
-    if (_client == null || !_isOnline || _pendingProfileQueue.isEmpty) {
-      return;
-    }
-    var didChange = false;
-    while (_pendingProfileQueue.isNotEmpty) {
-      final update = _pendingProfileQueue.first;
-      final success = await _performProfileUpdate(update);
-      if (!success) {
-        break;
-      }
-      _pendingProfileQueue.removeAt(0);
-      didChange = true;
-    }
-    if (didChange) {
-      await _savePendingProfileQueue();
-    }
-  }
-
-  Future<bool> _performHistoryAction(_PendingHistoryAction action) async {
-    if (_client == null) return false;
-    try {
-      switch (action.type) {
-        case _HistoryActionType.upsert:
-          final record = action.record;
-          if (record == null) return true;
-          await _client!
-              .from('history')
-              .upsert([record.toRemoteJson(_userId)], onConflict: 'id');
-          return true;
-        case _HistoryActionType.clear:
-          await _client!.from('history').delete().eq('user_id', _userId);
-          return true;
-      }
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<bool> _performProfileUpdate(_PendingProfileUpdate update) async {
-    if (_client == null) return false;
-    try {
-      await _client!.from('profiles').upsert(update.payload, onConflict: 'user_id');
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-}
-
-enum _HistoryActionType { upsert, clear }
-
-class _PendingHistoryAction {
-  _PendingHistoryAction._(this.type, this.record, DateTime? createdAt)
-      : createdAt = (createdAt ?? DateTime.now()).toUtc();
-
-  factory _PendingHistoryAction.upsert(StoryRecord record) =>
-      _PendingHistoryAction._(_HistoryActionType.upsert, record, DateTime.now());
-
-  factory _PendingHistoryAction.clear() =>
-      _PendingHistoryAction._(_HistoryActionType.clear, null, DateTime.now());
-
-  final _HistoryActionType type;
-  final StoryRecord? record;
-  final DateTime createdAt;
-
-  Map<String, dynamic> toJson() {
-    return {
-      'type': type.name,
-      'record': record?.toJson(),
-      'createdAt': createdAt.toIso8601String(),
-    };
-  }
-
-  factory _PendingHistoryAction.fromJson(Map<String, dynamic> json) {
-    final typeString = json['type'] as String?;
-    final createdAt = StoryRecord.parseDate(json['createdAt']) ?? DateTime.now().toUtc();
-    final recordJson = json['record'];
-
-    switch (typeString) {
-      case 'upsert':
-        if (recordJson is Map<String, dynamic>) {
-          return _PendingHistoryAction._(
-            _HistoryActionType.upsert,
-            StoryRecord.fromJson(recordJson),
-            createdAt,
-          );
-        }
-        break;
-      case 'clear':
-        return _PendingHistoryAction._(_HistoryActionType.clear, null, createdAt);
-    }
-
-    return _PendingHistoryAction._(_HistoryActionType.clear, null, createdAt);
-  }
-}
-
-class _PendingProfileUpdate {
-  _PendingProfileUpdate({required this.payload, DateTime? createdAt})
-      : createdAt = (createdAt ?? DateTime.now()).toUtc();
-
-  final Map<String, dynamic> payload;
-  final DateTime createdAt;
-
-  Map<String, dynamic> toJson() {
-    return {
-      'payload': payload,
-      'createdAt': createdAt.toIso8601String(),
-    };
-  }
-
-  factory _PendingProfileUpdate.fromJson(Map<String, dynamic> json) {
-    final createdAt = StoryRecord.parseDate(json['createdAt']) ?? DateTime.now().toUtc();
-    final payload = (json['payload'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
-    return _PendingProfileUpdate(payload: payload, createdAt: createdAt);
+  Future<void> _writeProfile(UserProfile profile) async {
+    final doc = _firestore.collection('users').doc(_userId);
+    await doc.set(
+      profile.toFirestoreJson(),
+      SetOptions(merge: true),
+    );
   }
 }

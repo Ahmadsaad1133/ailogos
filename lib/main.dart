@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models/app_state.dart';
+import 'models/creative_workspace_state.dart';
 import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
@@ -14,10 +15,23 @@ import 'screens/sign_in_screen.dart';
 import 'screens/sign_out_screen.dart';
 import 'screens/sign_up_screen.dart';
 import 'screens/splash_screen.dart';
+import 'screens/persona_chat_screen.dart';
 import 'services/auth_service.dart';
 import 'services/history_service.dart';
 import 'services/preferences_service.dart';
+import 'services/cloud_media_repository.dart';
+import 'services/creative_content_repository.dart';
+import 'services/groq_tts_service.dart';
+import 'services/image_generation_service.dart';
+import 'services/persona_chat_service.dart';
 import 'services/story_generation_service.dart';
+import 'services/chat_clients/anthropic_chat_client.dart';
+import 'services/chat_clients/chat_model_client.dart';
+import 'services/chat_clients/groq_chat_client.dart';
+import 'services/chat_clients/openai_chat_client.dart';
+import 'services/sleep_sound_service.dart';
+import 'services/voice_narrator_service.dart';
+import 'services/writing_generation_service.dart';
 import 'services/user_data_store.dart';
 import 'themes/app_theme.dart';
 
@@ -40,15 +54,30 @@ Future<void> main() async {
     preferences: sharedPreferences,
   );
   await dataStore.initialise();
-  final storyService = StoryGenerationService.fromEnvironment(
-    groqApiKey: groqKey,
-    groqModel: groqModelId,
-    openAiKey: openAiKey,
-    openAiModel: openAiModel,
-    anthropicKey: anthropicKey,
-    anthropicModel: anthropicModel,
+  final chatClients = <ChatModelClient>[
+    GroqChatClient(apiKey: groqKey, model: groqModelId),
+    OpenAIChatClient(apiKey: openAiKey, model: openAiModel),
+    AnthropicChatClient(apiKey: anthropicKey, model: anthropicModel),
+  ];
+  final storyService = StoryGenerationService(
+    clients: chatClients,
   );
 
+  final imageModel = dotenv.env['OPENAI_IMAGE_MODEL'] ?? 'gpt-image-1';
+  final imageService = ImageGenerationService(
+    apiKey: openAiKey,
+    model: imageModel,
+  );
+
+  final mediaRepository = CloudMediaRepository();
+  final contentRepository = CreativeContentRepository();
+  final voiceService = VoiceNarratorService(
+    ttsService: GroqTTSService(),
+    mediaRepository: mediaRepository,
+  );
+  final sleepService = SleepSoundService(mediaRepository: mediaRepository);
+  final writingService = WritingGenerationService(clients: chatClients);
+  final personaService = PersonaChatService(clients: chatClients);
   final historyService = HistoryService(dataStore);
   final preferencesService = PreferencesService(dataStore);
 
@@ -57,6 +86,8 @@ Future<void> main() async {
       providers: [
         Provider<AuthService>.value(value: authService),
         Provider<UserDataStore>.value(value: dataStore),
+        Provider<CreativeContentRepository>.value(value: contentRepository),
+        Provider<CloudMediaRepository>.value(value: mediaRepository),
       ],
       child: ChangeNotifierProvider(
         create: (_) => AppState(
@@ -66,7 +97,20 @@ Future<void> main() async {
           dataStore: dataStore,
           authService: authService,
         )..initialise(),
-        child: const OBSDIVApp(),
+        child: ChangeNotifierProvider(
+          create: (_) => CreativeWorkspaceState(
+            imageService: imageService,
+            voiceService: voiceService,
+            sleepSoundService: sleepService,
+            writingService: writingService,
+            personaChatService: personaService,
+            contentRepository: contentRepository,
+            mediaRepository: mediaRepository,
+            dataStore: dataStore,
+            authService: authService,
+          ),
+          child: const OBSDIVApp(),
+        ),
       ),
     ),
   );
@@ -107,6 +151,11 @@ class OBSDIVApp extends StatelessWidget {
           case SettingsScreen.routeName:
             return MaterialPageRoute(
               builder: (_) => const SettingsScreen(),
+              settings: settings,
+            );
+          case PersonaChatScreen.routeName:
+            return MaterialPageRoute(
+              builder: (_) => const PersonaChatScreen(),
               settings: settings,
             );
           case HistoryScreen.routeName:

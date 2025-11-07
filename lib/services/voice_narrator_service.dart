@@ -1,29 +1,13 @@
-import 'dart:io';
-import 'dart:typed_data';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../models/voice_narration.dart';
-import 'cloud_media_repository.dart';
-import 'groq_tts_service.dart';
 
 class VoiceNarratorService {
-  VoiceNarratorService({
-    required GroqTTSService ttsService,
-    required CloudMediaRepository mediaRepository,
-  })  : _ttsService = ttsService,
-        _mediaRepository = mediaRepository;
+  static const _channel = MethodChannel('chaquopy');
 
-  final GroqTTSService _ttsService;
-  final CloudMediaRepository _mediaRepository;
-
-  static const Map<String, String> _voiceMapping = {
-    'Warm Female': 'Salma-PlayAI',
-    'Deep Male': 'Fritz-PlayAI',
-    'Soft Whisper': 'Sandi-PlayAI',
-    'Storyteller': 'Emily-PlayAI',
-  };
-
-  static List<String> get availableVoices =>
-      List<String>.unmodifiable(_voiceMapping.keys);
+  // Only one local voice for now
+  static const List<String> availableVoices = ['Default narrator'];
 
   Future<VoiceNarration> narrate({
     required String userId,
@@ -32,27 +16,39 @@ class VoiceNarratorService {
     required double pitch,
     required double rate,
   }) async {
-    final voiceId = _voiceMapping[voiceStyle] ?? _voiceMapping.values.first;
-    final file = await _ttsService.generateSpeech(text, voice: voiceId);
-    final bytes = await file.readAsBytes();
-    final narrationId = DateTime.now().microsecondsSinceEpoch.toString();
-    final storagePath = 'users/$userId/voice/$narrationId.mp3';
-    final downloadUrl = await _mediaRepository.uploadBytes(
-      data: Uint8List.fromList(bytes),
-      path: storagePath,
-      contentType: 'audio/mpeg',
-    );
+    final dir = await getApplicationDocumentsDirectory();
 
-    return VoiceNarration(
-      id: narrationId,
-      text: text,
-      voiceStyle: voiceStyle,
-      pitch: pitch,
-      rate: rate,
-      storagePath: storagePath,
-      downloadUrl: downloadUrl,
-      createdAt: DateTime.now(),
-      durationSeconds: 0,
-    );
+    // Use MP3 because gTTS writes MP3 audio
+    final outputPath =
+        '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.mp3';
+
+    try {
+      final result = await _channel.invokeMethod<String>(
+        'runPythonTTS',
+        {
+          'text': text,
+          'path': outputPath,
+        },
+      );
+
+      if (result == null || result.startsWith('error:')) {
+        throw Exception('Python error: $result');
+      }
+
+      return VoiceNarration(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        text: text,
+        voiceStyle: voiceStyle,
+        pitch: pitch,
+        rate: rate,
+        filePath: outputPath,
+        createdAt: DateTime.now(),
+        durationSeconds: 0,
+      );
+    } on PlatformException catch (e) {
+      throw Exception('Local TTS failed: ${e.message ?? e.code}');
+    } catch (e) {
+      throw Exception('Local TTS failed: $e');
+    }
   }
 }

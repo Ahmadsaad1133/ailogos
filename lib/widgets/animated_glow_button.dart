@@ -11,7 +11,7 @@ class AnimatedGlowButton extends StatefulWidget {
 
   final String label;
   final IconData icon;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final bool isBusy;
 
   @override

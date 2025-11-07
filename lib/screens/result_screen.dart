@@ -167,7 +167,7 @@ class _ResultScreenState extends State<ResultScreen> {
         _isLoadingAudio = true;
       });
 
-      final file = await _groqTts.generateSpeech(text);
+      final file = await _groqTts.generateSpeech(text: text);
       await _groqPlayer.setPlaybackRate(0.9);
       await _groqPlayer.play(DeviceFileSource(file.path));
 

@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+
 
 class VoiceNarration {
   const VoiceNarration({
@@ -7,28 +7,22 @@ class VoiceNarration {
     required this.voiceStyle,
     required this.pitch,
     required this.rate,
-    required this.storagePath,
-    required this.downloadUrl,
+    required this.filePath,
     required this.createdAt,
     required this.durationSeconds,
   });
 
-  factory VoiceNarration.fromDocument(
-      DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data() ?? <String, dynamic>{};
-    final timestamp = data['createdAt'];
+  factory VoiceNarration.fromJson(Map<String, dynamic> json) {
     return VoiceNarration(
-      id: doc.id,
-      text: data['text'] as String? ?? '',
-      voiceStyle: data['voiceStyle'] as String? ?? 'default',
-      pitch: (data['pitch'] as num?)?.toDouble() ?? 1.0,
-      rate: (data['rate'] as num?)?.toDouble() ?? 1.0,
-      storagePath: data['storagePath'] as String? ?? '',
-      downloadUrl: data['downloadUrl'] as String? ?? '',
-      createdAt: timestamp is Timestamp
-          ? timestamp.toDate()
-          : DateTime.tryParse(timestamp?.toString() ?? '') ?? DateTime.now(),
-      durationSeconds: (data['durationSeconds'] as num?)?.toDouble() ?? 0,
+      id: json['id'] as String? ?? '',
+      text: json['text'] as String? ?? '',
+      voiceStyle: json['voiceStyle'] as String? ?? 'default',
+      pitch: (json['pitch'] as num?)?.toDouble() ?? 1.0,
+      rate: (json['rate'] as num?)?.toDouble() ?? 1.0,
+      filePath: json['filePath'] as String? ?? '',
+      createdAt:
+      DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+      durationSeconds: (json['durationSeconds'] as num?)?.toDouble() ?? 0,
     );
   }
 
@@ -37,20 +31,19 @@ class VoiceNarration {
   final String voiceStyle;
   final double pitch;
   final double rate;
-  final String storagePath;
-  final String downloadUrl;
+  final String filePath;
   final DateTime createdAt;
   final double durationSeconds;
 
-  Map<String, dynamic> toFirestore() {
+  Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'text': text,
       'voiceStyle': voiceStyle,
       'pitch': pitch,
       'rate': rate,
-      'storagePath': storagePath,
-      'downloadUrl': downloadUrl,
-      'createdAt': Timestamp.fromDate(createdAt),
+      'filePath': filePath,
+      'createdAt': createdAt.toIso8601String(),
       'durationSeconds': durationSeconds,
     };
   }

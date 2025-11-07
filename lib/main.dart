@@ -31,6 +31,7 @@ import 'services/chat_clients/groq_chat_client.dart';
 import 'services/chat_clients/openai_chat_client.dart';
 import 'services/sleep_sound_service.dart';
 import 'services/voice_narrator_service.dart';
+import 'services/voice_library_store.dart';
 import 'services/writing_generation_service.dart';
 import 'services/user_data_store.dart';
 import 'themes/app_theme.dart';
@@ -71,10 +72,8 @@ Future<void> main() async {
 
   final mediaRepository = CloudMediaRepository();
   final contentRepository = CreativeContentRepository();
-  final voiceService = VoiceNarratorService(
-    ttsService: GroqTTSService(),
-    mediaRepository: mediaRepository,
-  );
+  final voiceLibraryStore = VoiceLibraryStore(preferences: sharedPreferences);
+  final voiceService = VoiceNarratorService();
   final sleepService = SleepSoundService(mediaRepository: mediaRepository);
   final writingService = WritingGenerationService(clients: chatClients);
   final personaService = PersonaChatService(clients: chatClients);
@@ -106,6 +105,7 @@ Future<void> main() async {
             personaChatService: personaService,
             contentRepository: contentRepository,
             mediaRepository: mediaRepository,
+            voiceLibraryStore: voiceLibraryStore,
             dataStore: dataStore,
             authService: authService,
           ),

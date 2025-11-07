@@ -9,6 +9,7 @@ import '../services/image_generation_service.dart';
 import '../services/persona_chat_service.dart';
 import '../services/sleep_sound_service.dart';
 import '../services/voice_narrator_service.dart';
+import '../services/voice_library_store.dart';
 import '../services/writing_generation_service.dart';
 import '../services/cloud_media_repository.dart';
 import '../services/user_data_store.dart';
@@ -28,6 +29,7 @@ class CreativeWorkspaceState extends ChangeNotifier {
     required PersonaChatService personaChatService,
     required CreativeContentRepository contentRepository,
     required CloudMediaRepository mediaRepository,
+    required VoiceLibraryStore voiceLibraryStore,
     required UserDataStore dataStore,
     required AuthService authService,
   })  : _imageService = imageService,
@@ -37,6 +39,7 @@ class CreativeWorkspaceState extends ChangeNotifier {
         _personaService = personaChatService,
         _contentRepository = contentRepository,
         _mediaRepository = mediaRepository,
+        _voiceLibrary = voiceLibraryStore,
         _dataStore = dataStore,
         _authService = authService {
     _userId = _dataStore.userId;
@@ -44,6 +47,7 @@ class CreativeWorkspaceState extends ChangeNotifier {
       _handleAuthUpdate(user);
     });
     _attachStreams();
+    unawaited(_loadVoiceLibrary());
   }
 
   final ImageGenerationService _imageService;
@@ -53,12 +57,12 @@ class CreativeWorkspaceState extends ChangeNotifier {
   final PersonaChatService _personaService;
   final CreativeContentRepository _contentRepository;
   final CloudMediaRepository _mediaRepository;
+  final VoiceLibraryStore _voiceLibrary;
   final UserDataStore _dataStore;
   final AuthService _authService;
 
   StreamSubscription<User?>? _authSubscription;
   StreamSubscription<List<GeneratedImage>>? _imagesSubscription;
-  StreamSubscription<List<VoiceNarration>>? _voiceSubscription;
   StreamSubscription<List<SleepSoundMix>>? _sleepSubscription;
   StreamSubscription<List<WritingPiece>>? _writingSubscription;
   StreamSubscription<List<ChatConversation>>? _conversationSubscription;
@@ -201,11 +205,12 @@ class CreativeWorkspaceState extends ChangeNotifier {
         pitch: pitch,
         rate: rate,
       );
-      await _contentRepository.saveVoiceNarration(
-        userId: _userId,
-        narration: narration,
-      );
+      await _voiceLibrary.saveNarration(_userId, narration);
       _latestNarration = narration;
+      _narrationLibrary = [
+        narration,
+        ..._narrationLibrary.where((item) => item.id != narration.id),
+      ];
     } catch (e) {
       _voiceError = e.toString();
     } finally {
@@ -365,19 +370,16 @@ class CreativeWorkspaceState extends ChangeNotifier {
     _userId = nextId;
     _detachStreams();
     _attachStreams();
+    unawaited(_loadVoiceLibrary());
     notifyListeners();
   }
 
   void _attachStreams() {
-    _imagesSubscription = _contentRepository.watchImages(_userId).listen((items) {
+    _imagesSubscription =
+        _contentRepository.watchImages(_userId).listen((items) {
       _imageGallery = items;
       notifyListeners();
     });
-    _voiceSubscription =
-        _contentRepository.watchVoiceNarrations(_userId).listen((items) {
-          _narrationLibrary = items;
-          notifyListeners();
-        });
     _sleepSubscription =
         _contentRepository.watchSleepMixes(_userId).listen((items) {
           _sleepLibrary = items;
@@ -397,10 +399,15 @@ class CreativeWorkspaceState extends ChangeNotifier {
 
   void _detachStreams() {
     _imagesSubscription?.cancel();
-    _voiceSubscription?.cancel();
     _sleepSubscription?.cancel();
     _writingSubscription?.cancel();
     _conversationSubscription?.cancel();
+  }
+  Future<void> _loadVoiceLibrary() async {
+    final narrations = await _voiceLibrary.fetchNarrations(_userId);
+    _narrationLibrary = narrations;
+    _latestNarration = narrations.isNotEmpty ? narrations.first : null;
+    notifyListeners();
   }
 
   @override

@@ -15,23 +15,25 @@ class VoiceTab extends StatefulWidget {
 }
 
 class _VoiceTabState extends State<VoiceTab> {
-  final TextEditingController _textController = TextEditingController();
+  late final TextEditingController _textController;
   late final AudioPlayer _player;
-  String _voiceStyle = VoiceNarratorService.availableVoices.first;
+  late final VoiceNarratorService _voiceNarratorService;
+
+  String _selectedVoice = VoiceNarratorService.availableVoices.first;
   double _pitch = 1.0;
   double _rate = 1.0;
-  bool _isPlaying = false;
+  bool _isGenerating = false;
+
+  VoiceNarration? _currentNarration;
 
   @override
   void initState() {
     super.initState();
+    _textController = TextEditingController();
     _player = AudioPlayer();
-    _player.onPlayerStateChanged.listen((state) {
-      final playing = state == PlayerState.playing;
-      if (mounted && playing != _isPlaying) {
-        setState(() => _isPlaying = playing);
-      }
-    });
+
+    // 🔗 Connect to your local TTS server
+    _voiceNarratorService = VoiceNarratorService();
   }
 
   @override
@@ -41,77 +43,64 @@ class _VoiceTabState extends State<VoiceTab> {
     super.dispose();
   }
 
-  Future<void> _generate(CreativeWorkspaceState workspace) async {
+  Future<void> _generate() async {
     final text = _textController.text.trim();
-    if (text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter some text to narrate.')),
+    if (text.isEmpty) return;
+
+    setState(() => _isGenerating = true);
+
+    try {
+      const userId = 'local-user';
+
+      final narration = await _voiceNarratorService.narrate(
+        userId: userId,
+        text: text,
+        voiceStyle: _selectedVoice,
+        pitch: _pitch,
+        rate: _rate,
       );
-      return;
+
+      setState(() {
+        _currentNarration = narration;
+      });
+    } catch (e) {
+      debugPrint('Error generating narration: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Voice generation failed: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isGenerating = false);
+      }
     }
-    FocusScope.of(context).unfocus();
-    await workspace.generateNarration(
-      text: text,
-      voiceStyle: _voiceStyle,
-      pitch: _pitch,
-      rate: _rate,
-    );
   }
 
-  Future<void> _playNarration(VoiceNarration narration) async {
-    await _player.stop();
-    await _player.setPlaybackRate(_rate);
-    await _player.play(UrlSource(narration.downloadUrl));
+  Future<void> _play() async {
+    if (_currentNarration == null) return;
+    try {
+      await _player.stop();
+      await _player.play(DeviceFileSource(_currentNarration!.filePath));
+    } catch (e) {
+      debugPrint('Error playing narration: $e');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final workspace = context.watch<CreativeWorkspaceState>();
     final theme = Theme.of(context);
-    final latest = workspace.latestNarration;
+    context.watch<CreativeWorkspaceState?>();
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Pick a voice and generate a custom narration.',
-            style: theme.textTheme.bodyLarge,
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            value: _voiceStyle,
-            items: VoiceNarratorService.availableVoices
-                .map(
-                  (voice) => DropdownMenuItem(
-                value: voice,
-                child: Text(voice),
-              ),
-            )
-                .toList(),
-            decoration: const InputDecoration(
-              labelText: 'Voice style',
-            ),
-            onChanged: (value) {
-              if (value != null) {
-                setState(() => _voiceStyle = value);
-              }
-            },
+            'Story voice narration',
+            style: theme.textTheme.titleLarge,
           ),
           const SizedBox(height: 12),
-          _SliderRow(
-            label: 'Pitch ${_pitch.toStringAsFixed(2)}',
-            value: _pitch,
-            onChanged: (value) => setState(() => _pitch = value),
-          ),
-          const SizedBox(height: 12),
-          _SliderRow(
-            label: 'Rate ${_rate.toStringAsFixed(2)}',
-            value: _rate,
-            onChanged: (value) => setState(() => _rate = value),
-          ),
-          const SizedBox(height: 16),
           TextField(
             controller: _textController,
             maxLines: 6,
@@ -121,114 +110,88 @@ class _VoiceTabState extends State<VoiceTab> {
             ),
           ),
           const SizedBox(height: 16),
-          AnimatedGlowButton(
-            label: 'Generate narration',
-            icon: Icons.graphic_eq_rounded,
-            isBusy: workspace.isGeneratingVoice,
-            onPressed: () => _generate(workspace),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _selectedVoice,
+                  decoration: const InputDecoration(
+                    labelText: 'Voice style',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: VoiceNarratorService.availableVoices
+                      .map(
+                        (v) => DropdownMenuItem(
+                      value: v,
+                      child: Text(v),
+                    ),
+                  )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _selectedVoice = value);
+                  },
+                ),
+              ),
+            ],
           ),
-          if (workspace.voiceError != null) ...[
+          const SizedBox(height: 16),
+          _buildSlider(
+            context: context,
+            label: 'Pitch',
+            value: _pitch,
+            onChanged: (v) => setState(() => _pitch = v),
+          ),
+          const SizedBox(height: 8),
+          _buildSlider(
+            context: context,
+            label: 'Rate',
+            value: _rate,
+            onChanged: (v) => setState(() => _rate = v),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: AnimatedGlowButton(
+                  label: 'Generate narration',
+                  icon: Icons.graphic_eq_rounded,
+                  isBusy: _isGenerating,
+                  onPressed: _isGenerating ? null : _generate,
+                ),
+              ),
+              const SizedBox(width: 12),
+              IconButton.filled(
+                onPressed:
+                (_currentNarration == null || _isGenerating) ? null : _play,
+                icon: const Icon(Icons.play_arrow_rounded),
+                tooltip: 'Play last narration',
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          if (_currentNarration != null) ...[
+            Text(
+              'Last narration',
+              style: theme.textTheme.titleMedium,
+            ),
             const SizedBox(height: 8),
             Text(
-              workspace.voiceError!,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.error),
+              _currentNarration!.text,
+              style: theme.textTheme.bodyMedium,
             ),
           ],
-          const SizedBox(height: 24),
-          if (latest != null)
-            _NarrationTile(
-              narration: latest,
-              isPlaying: _isPlaying,
-              onPlay: () => _playNarration(latest),
-            ),
-          const SizedBox(height: 12),
-          if (workspace.narrationLibrary.isNotEmpty)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Library', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 8),
-                ...workspace.narrationLibrary.take(5).map(
-                      (item) => _NarrationTile(
-                    narration: item,
-                    isPlaying: _isPlaying,
-                    onPlay: () => _playNarration(item),
-                  ),
-                ),
-              ],
-            ),
         ],
       ),
     );
   }
-}
 
-class _NarrationTile extends StatelessWidget {
-  const _NarrationTile({
-    required this.narration,
-    required this.isPlaying,
-    required this.onPlay,
-  });
-
-  final VoiceNarration narration;
-  final bool isPlaying;
-  final VoidCallback onPlay;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: theme.colorScheme.surface.withOpacity(0.94),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: Icon(isPlaying ? Icons.stop_rounded : Icons.play_arrow_rounded),
-            onPressed: onPlay,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  narration.voiceStyle,
-                  style: theme.textTheme.titleSmall,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  narration.text,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SliderRow extends StatelessWidget {
-  const _SliderRow({
-    required this.label,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String label;
-  final double value;
-  final ValueChanged<double> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildSlider({
+    required BuildContext context,
+    required String label,
+    required double value,
+    required ValueChanged<double> onChanged,
+  }) {
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

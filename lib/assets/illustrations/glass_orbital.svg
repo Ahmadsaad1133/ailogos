@@ -1,0 +1,44 @@
+<svg width="1180" height="1180" viewBox="0 0 1180 1180" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <radialGradient id="orbitalCore" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+            gradientTransform="translate(690 520) rotate(48) scale(360 380)">
+            <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.85" />
+            <stop offset="0.46" stop-color="#2BF2C9" stop-opacity="0.6" />
+            <stop offset="1" stop-color="#103042" stop-opacity="0" />
+        </radialGradient>
+        <linearGradient id="orbitalRim" x1="320" y1="300" x2="960" y2="860" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#00E0FF" stop-opacity="0.9" />
+            <stop offset="0.48" stop-color="#6B4DFF" stop-opacity="0.4" />
+            <stop offset="1" stop-color="#FF7AF5" stop-opacity="0.8" />
+        </linearGradient>
+        <radialGradient id="orbitalRefraction" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+            gradientTransform="translate(470 710) rotate(-24) scale(320 280)">
+            <stop offset="0" stop-color="#7BFFF1" stop-opacity="0.75" />
+            <stop offset="1" stop-color="#0E142E" stop-opacity="0" />
+        </radialGradient>
+        <filter id="orbitalBlur" x="120" y="120" width="940" height="940" filterUnits="userSpaceOnUse"
+            color-interpolation-filters="sRGB">
+            <feGaussianBlur stdDeviation="46" />
+        </filter>
+        <filter id="specular" x="420" y="300" width="360" height="360" filterUnits="userSpaceOnUse"
+            color-interpolation-filters="sRGB">
+            <feGaussianBlur stdDeviation="26" result="blur" />
+            <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+    </defs>
+    <g filter="url(#orbitalBlur)">
+        <path d="M240 612C276 412 460 240 650 248C840 256 1016 452 980 652C944 852 760 1024 570 1016C380 1008 204 812 240 612Z"
+            fill="url(#orbitalCore)" />
+    </g>
+    <path d="M284 536C344 336 556 220 748 296C940 372 1036 584 976 784" stroke="url(#orbitalRim)" stroke-width="52"
+        stroke-linecap="round" stroke-linejoin="round" opacity="0.45" />
+    <path d="M360 788C420 644 624 584 756 640C888 696 924 844 864 988" fill="url(#orbitalRefraction)" opacity="0.42" />
+    <g filter="url(#specular)">
+        <ellipse cx="598" cy="420" rx="86" ry="102" fill="#FFFFFF" fill-opacity="0.4" />
+    </g>
+    <circle cx="864" cy="700" r="24" fill="#00E0FF" fill-opacity="0.56" />
+    <circle cx="468" cy="920" r="18" fill="#FF7AF5" fill-opacity="0.5" />
+</svg>

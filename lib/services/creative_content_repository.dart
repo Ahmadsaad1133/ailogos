@@ -4,7 +4,6 @@ import '../models/chat_conversation.dart';
 import '../models/chat_message.dart';
 import '../models/generated_image.dart';
 import '../models/sleep_sound_mix.dart';
-import '../models/voice_narration.dart';
 import '../models/writing_piece.dart';
 
 class CreativeContentRepository {
@@ -35,30 +34,6 @@ class CreativeContentRepository {
         .snapshots()
         .map((snapshot) => snapshot.docs
         .map((doc) => GeneratedImage.fromDocument(doc))
-        .toList());
-  }
-
-  Future<void> saveVoiceNarration({
-    required String userId,
-    required VoiceNarration narration,
-  }) {
-    return _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('voice_narrations')
-        .doc(narration.id)
-        .set(narration.toFirestore());
-  }
-
-  Stream<List<VoiceNarration>> watchVoiceNarrations(String userId) {
-    return _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('voice_narrations')
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) => snapshot.docs
-        .map((doc) => VoiceNarration.fromDocument(doc))
         .toList());
   }
 

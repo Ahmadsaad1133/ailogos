@@ -1,0 +1,46 @@
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <radialGradient id="haloCore" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+            gradientTransform="translate(620 540) scale(420)">
+            <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.95" />
+            <stop offset="0.35" stop-color="#9C7CFF" stop-opacity="0.65" />
+            <stop offset="0.72" stop-color="#523BFF" stop-opacity="0.2" />
+            <stop offset="1" stop-color="#1F1347" stop-opacity="0" />
+        </radialGradient>
+        <radialGradient id="haloRing" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+            gradientTransform="translate(560 620) rotate(35) scale(520 360)">
+            <stop offset="0" stop-color="#4CD4FF" stop-opacity="0.9" />
+            <stop offset="0.42" stop-color="#6B4DFF" stop-opacity="0.45" />
+            <stop offset="1" stop-color="#140A33" stop-opacity="0" />
+        </radialGradient>
+        <linearGradient id="haloArc" x1="220" y1="280" x2="960" y2="880" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#FF7AF5" stop-opacity="0.7" />
+            <stop offset="0.48" stop-color="#6B4DFF" stop-opacity="0.3" />
+            <stop offset="1" stop-color="#00E0FF" stop-opacity="0.65" />
+        </linearGradient>
+        <filter id="blur" x="-160" y="-160" width="1520" height="1520" filterUnits="userSpaceOnUse"
+            color-interpolation-filters="sRGB">
+            <feGaussianBlur stdDeviation="60" />
+        </filter>
+        <filter id="softGlow" x="220" y="120" width="760" height="760" filterUnits="userSpaceOnUse"
+            color-interpolation-filters="sRGB">
+            <feGaussianBlur stdDeviation="90" result="blur" />
+            <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+    </defs>
+    <g opacity="0.95" filter="url(#softGlow)">
+        <ellipse cx="600" cy="560" rx="340" ry="320" fill="url(#haloCore)" />
+    </g>
+    <g filter="url(#blur)">
+        <path d="M232 520C312 280 548 172 756 240C964 308 1092 528 1012 768C932 1008 696 1116 488 1048C280 980 152 760 232 520Z"
+            fill="url(#haloRing)" />
+    </g>
+    <path d="M256 620C352 408 612 316 824 404C1036 492 1120 740 1024 952" stroke="url(#haloArc)" stroke-width="68"
+        stroke-linecap="round" stroke-linejoin="round" opacity="0.32" />
+    <circle cx="360" cy="468" r="36" fill="#FFB5F9" fill-opacity="0.7" />
+    <circle cx="904" cy="812" r="24" fill="#89FFF0" fill-opacity="0.6" />
+    <circle cx="780" cy="360" r="18" fill="#6B4DFF" fill-opacity="0.55" />
+</svg>

@@ -5,111 +5,114 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
-/// Service responsible for converting text to speech using Groq TTS.
+/// Service responsible for converting text to speech using Groq + PlayAI TTS.
 ///
 /// Important:
-/// - You CANNOT download or embed the Groq model in the app.
-/// - But you CAN fetch the generated audio and play/cache it locally.
+/// - This calls Groq's OpenAI-compatible TTS endpoint:
+///   https://api.groq.com/openai/v1/audio/speech
+/// - Model used: `playai-tts`
+/// - Voices must be one of the allowed PlayAI voices (see [supportedVoices]).
 class GroqTTSService {
   GroqTTSService();
 
   /// Reads GROQ_API_KEY from .env
   String get _apiKey => dotenv.env['GROQ_API_KEY'] ?? '';
 
-  /// TTS model.
+  bool get isConfigured => _apiKey.isNotEmpty;
+
+  static const String _ttsModel = 'playai-tts';
+
+  /// Default voice if the caller doesn't specify one.
+  static const String _defaultVoice = 'Fritz-PlayAI';
+
+  /// All allowed voices as returned in the Groq error message.
+  static const List<String> supportedVoices = [
+    'Aaliyah-PlayAI',
+    'Adelaide-PlayAI',
+    'Angelo-PlayAI',
+    'Arista-PlayAI',
+    'Atlas-PlayAI',
+    'Basil-PlayAI',
+    'Briggs-PlayAI',
+    'Calum-PlayAI',
+    'Celeste-PlayAI',
+    'Cheyenne-PlayAI',
+    'Chip-PlayAI',
+    'Cillian-PlayAI',
+    'Deedee-PlayAI',
+    'Eleanor-PlayAI',
+    'Fritz-PlayAI',
+    'Gail-PlayAI',
+    'Indigo-PlayAI',
+    'Jennifer-PlayAI',
+    'Judy-PlayAI',
+    'Mamaw-PlayAI',
+    'Mason-PlayAI',
+    'Mikail-PlayAI',
+    'Mitch-PlayAI',
+    'Nia-PlayAI',
+    'Quinn-PlayAI',
+    'Ruby-PlayAI',
+    'Thunder-PlayAI',
+  ];
+
+  /// Generate speech from [text].
   ///
-  /// For English:
-  ///   playai-tts
-  ///
-  /// For Arabic:
-  ///   playai-tts-arabic
-  String get _model => 'playai-tts';
-
-  /// Hard limit to keep requests small enough for free / on_demand tiers.
-  ///
-  /// Your current tier only allows ~1200 tokens per request.
-  /// To stay safe, we'll only send ~800 characters of text.
-  static const int _maxCharsForTts = 800;
-
-  /// Take only the beginning of the story for audio playback.
-  ///
-  /// The audio becomes a "preview" instead of full story on low tiers.
-  String _truncateForTts(String text) {
-    final trimmed = text.trim();
-    if (trimmed.length <= _maxCharsForTts) return trimmed;
-
-    final cut = trimmed.substring(0, _maxCharsForTts);
-
-    // Try to end on a sentence boundary if possible.
-    final lastDot = cut.lastIndexOf('.');
-    final safeEnd = lastDot > 100 ? lastDot + 1 : cut.length;
-
-    final preview = cut.substring(0, safeEnd).trim();
-    return '$preview\n\n[Audio preview only – story is longer in text.]';
-  }
-
-  /// Generate speech audio from [text] and return a local File (MP3).
-  ///
-  /// [voice] is a model-specific voice name. For example:
-  ///   "Fritz-PlayAI" (English)
-  ///   "Salma-PlayAI" (Arabic, if using the Arabic model)
-  Future<File> generateSpeech(
-      String text, {
-        String voice = 'Fritz-PlayAI',
-      }) async {
-    if (_apiKey.isEmpty) {
-      throw Exception('Missing GROQ_API_KEY in .env');
+  /// [voice] must be one of [supportedVoices]. If null, [_defaultVoice] is used.
+  /// [speed] must be between 0.25 and 4.0 (Groq constraint).
+  /// [responseFormat] can be "mp3", "opus", "aac", "flac".
+  Future<File> generateSpeech({
+    required String text,
+    String? voice,
+    double speed = 1.0,
+    String responseFormat = 'mp3',
+  }) async {
+    if (!isConfigured) {
+      throw StateError(
+        'Groq TTS API key is not configured. '
+            'Set GROQ_API_KEY in your .env file.',
+      );
     }
 
-    final uri = Uri.parse('https://api.groq.com/openai/v1/audio/speech');
+    if (text.trim().isEmpty) {
+      throw ArgumentError('Text for TTS cannot be empty.');
+    }
 
-    final safeText = _truncateForTts(text);
+    // Clamp speed into valid range.
+    final clampedSpeed = speed.clamp(0.25, 4.0);
 
-    final body = jsonEncode({
-      'model': _model,
-      'voice': voice,
-      'input': safeText,
-      'response_format': 'mp3',
-    });
+    final selectedVoice = voice ?? _defaultVoice;
+
+    if (!supportedVoices.contains(selectedVoice)) {
+      throw ArgumentError(
+        'Invalid TTS voice "$selectedVoice". '
+            'It must be one of: ${supportedVoices.join(', ')}',
+      );
+    }
+
+    final uri =
+    Uri.parse('https://api.groq.com/openai/v1/audio/speech');
+
+    final headers = <String, String>{
+      'Authorization': 'Bearer $_apiKey',
+      'Content-Type': 'application/json',
+    };
+
+    final payload = <String, dynamic>{
+      'model': _ttsModel,
+      'input': text,
+      'voice': selectedVoice,
+      'speed': clampedSpeed,
+      'response_format': responseFormat,
+    };
 
     final response = await http.post(
       uri,
-      headers: {
-        'Authorization': 'Bearer $_apiKey',
-        'Content-Type': 'application/json',
-      },
-      body: body,
+      headers: headers,
+      body: jsonEncode(payload),
     );
 
     if (response.statusCode != 200) {
-      // Try to parse common errors nicely.
-      try {
-        final decoded = jsonDecode(response.body);
-        final error = decoded['error'];
-        final code = error?['code'] as String?;
-        final message = error?['message'] as String?;
-
-        if (code == 'rate_limit_exceeded') {
-          throw Exception(
-            'Groq TTS limit reached for now.\n'
-                'You can still use the device voice, or try the AI voice later.',
-          );
-        }
-
-        if (code == 'model_terms_required') {
-          throw Exception(
-            'Groq TTS model terms not accepted.\n'
-                'Open the Groq console and accept the terms for $_model.',
-          );
-        }
-
-        if (message != null) {
-          throw Exception('Groq TTS error: $message');
-        }
-      } catch (_) {
-        // ignore parse failure and fall through
-      }
-
       throw Exception(
         'Groq TTS failed: ${response.statusCode} ${response.body}',
       );
@@ -118,7 +121,7 @@ class GroqTTSService {
     final bytes = response.bodyBytes;
 
     final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/obsdiv_story_audio.mp3');
+    final file = File('${dir.path}/obsdiv_story_audio.$responseFormat');
     await file.writeAsBytes(bytes, flush: true);
 
     return file;
